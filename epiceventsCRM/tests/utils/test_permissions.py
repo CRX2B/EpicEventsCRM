@@ -14,7 +14,7 @@ def test_department_permissions():
     assert has_permission(Department("commercial"), "update_contract")
     assert not has_permission(Department("commercial"), "delete_contract")
     assert not has_permission(Department("commercial"), "create_event")
-    assert not has_permission(Department("commercial"), "read_event")
+    assert has_permission(Department("commercial"), "read_event")
     assert not has_permission(Department("commercial"), "update_event")
     assert not has_permission(Department("commercial"), "delete_event")
 
@@ -34,7 +34,7 @@ def test_department_permissions():
 
     # Test des permissions gestion
     assert not has_permission(Department("gestion"), "create_client")
-    assert not has_permission(Department("gestion"), "read_client")
+    assert has_permission(Department("gestion"), "read_client")
     assert not has_permission(Department("gestion"), "update_client")
     assert not has_permission(Department("gestion"), "delete_client")
     assert has_permission(Department("gestion"), "create_contract")
@@ -73,7 +73,7 @@ def test_get_department_permissions():
     assert "update_contract" in commercial_perms
     assert "delete_contract" not in commercial_perms
     assert "create_event" not in commercial_perms
-    assert "read_event" not in commercial_perms
+    assert "read_event" in commercial_perms
     assert "update_event" not in commercial_perms
     assert "delete_event" not in commercial_perms
 
@@ -95,7 +95,7 @@ def test_get_department_permissions():
     # Test des permissions gestion
     gestion_perms = get_department_permissions(Department("gestion"))
     assert "create_client" not in gestion_perms
-    assert "read_client" not in gestion_perms
+    assert "read_client" in gestion_perms
     assert "update_client" not in gestion_perms
     assert "delete_client" not in gestion_perms
     assert "create_contract" in gestion_perms

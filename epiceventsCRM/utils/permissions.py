@@ -10,34 +10,39 @@ class Department(str, Enum):
 # Définition des permissions par département
 DEPARTMENT_PERMISSIONS = {
     Department.COMMERCIAL: {
+        # Permissions spécifiques au département commercial
         "create_client",
-        "read_client",
         "update_client",
         "delete_client",
         "create_contract",
-        "read_contract",
-        "update_contract"
-    },
-    Department.SUPPORT: {
+        "update_contract",
+        # Permissions de lecture communes
         "read_client",
         "read_contract",
+        "read_event"
+    },
+    Department.SUPPORT: {
+        # Permissions spécifiques au département support
         "create_event",
-        "read_event",
-        "update_event"
+        "update_event",
+        # Permissions de lecture communes
+        "read_client",
+        "read_contract",
+        "read_event"
     },
     Department.GESTION: {
-        # Gestion des utilisateurs
+        # Permissions spécifiques au département gestion
         "create_user",
         "read_user",
         "update_user",
         "delete_user",
-        # Gestion des contrats
         "create_contract",
-        "read_contract",
         "update_contract",
-        # Gestion des événements
-        "read_event",
-        "update_event"  # Pour attribuer un support à l'événement
+        "update_event",
+        # Permissions de lecture communes
+        "read_client",
+        "read_contract",
+        "read_event"
     }
 }
 

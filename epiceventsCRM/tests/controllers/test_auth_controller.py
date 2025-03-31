@@ -76,7 +76,7 @@ def test_auth_controller_permissions(db_session, test_department):
     assert auth_controller.check_permission(token, "update_contract") is True
     assert auth_controller.check_permission(token, "delete_contract") is False
     assert auth_controller.check_permission(token, "create_event") is False
-    assert auth_controller.check_permission(token, "read_event") is False
+    assert auth_controller.check_permission(token, "read_event") is True
     assert auth_controller.check_permission(token, "update_event") is False
     assert auth_controller.check_permission(token, "delete_event") is False
 
