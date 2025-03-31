@@ -1,19 +1,33 @@
 from logging.config import fileConfig
+import os
+from dotenv import load_dotenv
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
 
-# Importer les variables d'environnement et les modèles
-from epiceventsCRM.config import DATABASE_URL
-from epiceventsCRM.models.models import Base
+# Chargement des variables d'environnement
+load_dotenv()
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
-# Remplacer l'URL de la base de données par celle définie dans les variables d'environnement
+# Construction de l'URL de la base de données à partir des variables d'environnement
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME", "EpicCRM")
+
+# Si nous sommes en mode test, utiliser la base de données de test
+if os.getenv("TEST_MODE") == "true":
+    DB_NAME = f"{DB_NAME}_test"
+
+DATABASE_URL = f"postgresql+psycopg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
+# Mise à jour de l'URL dans la configuration
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 # Interpret the config file for Python logging.
@@ -23,8 +37,7 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
+from epiceventsCRM.models.models import Base
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

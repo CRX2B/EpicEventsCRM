@@ -10,7 +10,6 @@ class User(Base):
     fullname = Column(String)
     email = Column(String, unique=True)
     password = Column(String)
-    role = Column(String)
     departement_id = Column(Integer, ForeignKey('departments.id'))
     
     # Relations
