@@ -7,9 +7,13 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
-    """Crée une nouvelle session de base de données."""
+    """Crée une nouvelle session de base de données (générateur)."""
     db = SessionLocal()
     try:
         yield db
     finally:
-        db.close() 
+        db.close()
+        
+def get_session():
+    """Crée et retourne une nouvelle session de base de données."""
+    return SessionLocal() 

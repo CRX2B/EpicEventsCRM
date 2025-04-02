@@ -1,2 +1,2 @@
 # Package utils pour EpicEvents CRM
-# Ce package contient tous les utilitaires de l'application 
+# Ce package contient des utilitaires pour l'application 

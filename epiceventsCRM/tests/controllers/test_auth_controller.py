@@ -66,19 +66,20 @@ def test_auth_controller_permissions(db_session, test_department):
     result = auth_controller.login(db_session, commercial_data["email"], commercial_data["password"])
     token = result["token"]
 
-    # Test des permissions
+    # Test des permissions selon les nouvelles règles
     assert auth_controller.check_permission(token, "create_client") is True
     assert auth_controller.check_permission(token, "read_client") is True
     assert auth_controller.check_permission(token, "update_client") is True
     assert auth_controller.check_permission(token, "delete_client") is True
-    assert auth_controller.check_permission(token, "create_contract") is True
+    assert auth_controller.check_permission(token, "create_contract") is False
     assert auth_controller.check_permission(token, "read_contract") is True
     assert auth_controller.check_permission(token, "update_contract") is True
     assert auth_controller.check_permission(token, "delete_contract") is False
-    assert auth_controller.check_permission(token, "create_event") is False
+    assert auth_controller.check_permission(token, "create_event") is True
     assert auth_controller.check_permission(token, "read_event") is True
     assert auth_controller.check_permission(token, "update_event") is False
     assert auth_controller.check_permission(token, "delete_event") is False
+    assert auth_controller.check_permission(token, "read_user") is True
 
 def test_invalid_login(db_session, test_department):
     """Test la tentative de login avec des identifiants invalides."""

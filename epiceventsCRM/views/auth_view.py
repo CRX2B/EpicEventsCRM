@@ -4,7 +4,8 @@ from rich.prompt import Prompt
 from rich.panel import Panel
 from typing import Optional, Dict
 from epiceventsCRM.controllers.auth_controller import AuthController
-from epiceventsCRM.database import get_db
+from epiceventsCRM.database import get_db, get_session
+from epiceventsCRM.utils.token_manager import save_token, clear_token
 from sqlalchemy.orm import Session
 
 console = Console()
@@ -43,6 +44,8 @@ class AuthView:
                 f"Bienvenue {result['user']['fullname']}",
                 border_style="green"
             ))
+            # Sauvegarder le token
+            save_token(result['token'])
             return result
         else:
             console.print(Panel.fit(
@@ -56,6 +59,8 @@ class AuthView:
         """
         Affiche un message de déconnexion.
         """
+        # Supprimer le token
+        clear_token()
         console.print(Panel.fit(
             "[bold blue]Déconnexion[/bold blue]\n"
             "Au revoir !",
@@ -74,7 +79,7 @@ def auth():
 @auth.command()
 def login():
     """Se connecter à l'application"""
-    db = next(get_db())
+    db = get_session()
     auth_view.login(db)
 
 @auth.command()

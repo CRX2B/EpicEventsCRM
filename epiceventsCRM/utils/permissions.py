@@ -14,21 +14,22 @@ DEPARTMENT_PERMISSIONS = {
         "create_client",
         "update_client",
         "delete_client",
-        "create_contract",
-        "update_contract",
+        "update_contract",  # Uniquement pour les contrats de ses clients
+        "create_event",
         # Permissions de lecture communes
         "read_client",
         "read_contract",
-        "read_event"
+        "read_event",
+        "read_user"
     },
     Department.SUPPORT: {
         # Permissions spécifiques au département support
-        "create_event",
-        "update_event",
+        "update_event",  # Uniquement pour les événements dont ils sont responsables
         # Permissions de lecture communes
         "read_client",
         "read_contract",
-        "read_event"
+        "read_event",
+        "read_user"
     },
     Department.GESTION: {
         # Permissions spécifiques au département gestion
@@ -38,7 +39,8 @@ DEPARTMENT_PERMISSIONS = {
         "delete_user",
         "create_contract",
         "update_contract",
-        "update_event",
+        "delete_contract",
+        "update_event",  # Pour attribuer un support
         # Permissions de lecture communes
         "read_client",
         "read_contract",

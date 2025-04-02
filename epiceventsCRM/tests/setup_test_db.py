@@ -4,52 +4,44 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from epiceventsCRM.models.models import Base
 
-# Chargement des variables d'environnement
-load_dotenv()
-
-# Configuration de la base de données
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", "5432")
-DB_NAME = "EpicCRM_test"
-
 def setup_test_database():
-    """Configure la base de données de test."""
-    if not DB_USER or not DB_PASSWORD:
-        print("ERREUR : Les variables d'environnement DB_USER et DB_PASSWORD doivent être définies.")
-        return
-
-    # Connexion à la base de données postgres
+    """Crée la base de données de test si elle n'existe pas."""
+    # Charger les variables d'environnement de test
+    load_dotenv('.env.test')
+    
+    # Récupérer les informations de connexion
+    db_name = os.getenv('DB_NAME')
+    db_user = os.getenv('DB_USER')
+    db_password = os.getenv('DB_PASSWORD')
+    db_host = os.getenv('DB_HOST')
+    db_port = os.getenv('DB_PORT')
+    
+    # Se connecter à PostgreSQL
     conn = psycopg.connect(
-        dbname="postgres",
-        user=DB_USER,
-        password=DB_PASSWORD,
-        host=DB_HOST,
-        port=DB_PORT,
-        autocommit=True
+        dbname='postgres',  # Base de données par défaut
+        user=db_user,
+        password=db_password,
+        host=db_host,
+        port=db_port
     )
     
     try:
-        # Vérification si la base de données existe déjà
+        # Vérifier si la base de données existe
         with conn.cursor() as cur:
-            cur.execute(f"SELECT 1 FROM pg_database WHERE datname = '{DB_NAME}'")
+            cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db_name,))
             exists = cur.fetchone() is not None
-            
-            if exists:
-                print(f"La base de données {DB_NAME} existe.")
-                
-                # Création des tables dans la base de données de test
-                test_db_url = f"postgresql+psycopg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-                engine = create_engine(test_db_url)
-                Base.metadata.create_all(engine)
-                print(f"Les tables ont été créées dans la base de données {DB_NAME}.")
-            else:
-                print(f"ERREUR : La base de données {DB_NAME} n'existe pas.")
-                print("Veuillez la créer manuellement avec pgAdmin ou la commande :")
-                print(f"psql -U postgres -c \"CREATE DATABASE {DB_NAME};\"")
+        
+        if not exists:
+            # Créer la base de données
+            conn.autocommit = True
+            with conn.cursor() as cur:
+                cur.execute(f'CREATE DATABASE {db_name}')
+            print(f"Base de données {db_name} créée avec succès.")
+        else:
+            print(f"La base de données {db_name} existe déjà.")
+    
     finally:
         conn.close()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     setup_test_database() 

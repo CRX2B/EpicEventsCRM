@@ -9,8 +9,15 @@ class ClientController:
     Contrôleur pour la gestion des clients.
     """
     
-    def __init__(self):
-        self.client_dao = ClientDAO()
+    def __init__(self, session: Session = None):
+        """
+        Initialise le contrôleur avec une session DB optionnelle
+        
+        Args:
+            session (Session, optional): Session SQLAlchemy active
+        """
+        self.session = session
+        self.client_dao = ClientDAO(session)
         self.auth_controller = AuthController()
     
     def check_permission(self, token: str, permission: str) -> bool:
@@ -166,4 +173,24 @@ class ClientController:
                              user_info.get("department") != "gestion"):
             return False
             
-        return self.client_dao.delete(db, client_id) 
+        return self.client_dao.delete(db, client_id)
+        
+    # Méthodes pour compatibilité avec la vue
+    def list_clients(self, token: str) -> tuple:
+        """
+        Liste tous les clients accessibles par l'utilisateur
+        
+        Args:
+            token: Token JWT de l'utilisateur
+            
+        Returns:
+            tuple: (succès, liste des clients ou message d'erreur)
+        """
+        if not self.session:
+            return False, "Session de base de données non disponible"
+            
+        try:
+            clients = self.get_all_clients(self.session, token)
+            return True, clients
+        except Exception as e:
+            return False, str(e) 

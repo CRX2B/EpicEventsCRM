@@ -11,8 +11,15 @@ class UserDAO(BaseDAO[User]):
     Hérite de BaseDAO et ajoute des méthodes spécifiques aux utilisateurs.
     """
     
-    def __init__(self):
+    def __init__(self, session: Session = None):
+        """
+        Initialise le DAO avec une session optionnelle
+        
+        Args:
+            session (Session, optional): La session de base de données
+        """
         super().__init__(User)
+        self.session = session
     
     def get_by_email(self, db: Session, email: str) -> Optional[User]:
         """
@@ -104,4 +111,19 @@ class UserDAO(BaseDAO[User]):
         Returns:
             bool: True si le mot de passe correspond, False sinon
         """
-        return verify_password(password, user.password) 
+        return verify_password(password, user.password)
+        
+    # Ajout de méthodes pour compatibilité avec le controller
+    def get_user_by_id(self, user_id: int) -> Optional[User]:
+        """
+        Récupère un utilisateur par son ID en utilisant la session stockée
+        
+        Args:
+            user_id (int): L'ID de l'utilisateur
+            
+        Returns:
+            Optional[User]: L'utilisateur si trouvé, None sinon
+        """
+        if not self.session:
+            raise ValueError("Session not provided")
+        return self.get(self.session, user_id) 

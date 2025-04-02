@@ -8,6 +8,15 @@ class ClientDAO:
     DAO pour les opérations sur les clients.
     """
     
+    def __init__(self, session: Session = None):
+        """
+        Initialise le DAO avec une session optionnelle
+        
+        Args:
+            session (Session, optional): La session de base de données
+        """
+        self.session = session
+    
     def create(self, db: Session, client_data: Dict) -> Client:
         """
         Crée un nouveau client.
@@ -121,4 +130,19 @@ class ClientDAO:
             
         db.delete(client)
         db.commit()
-        return True 
+        return True
+        
+    # Ajout de méthodes pour compatibilité avec le controller
+    def get_client_by_id(self, client_id: int) -> Optional[Client]:
+        """
+        Récupère un client par son ID en utilisant la session stockée
+        
+        Args:
+            client_id (int): L'ID du client
+            
+        Returns:
+            Optional[Client]: Le client si trouvé, None sinon
+        """
+        if not self.session:
+            raise ValueError("Session not provided")
+        return self.get(self.session, client_id) 

@@ -1,5 +1,6 @@
 from typing import Optional, Dict, List
 from sqlalchemy.orm import Session
+import click
 from epiceventsCRM.controllers.user_management_controller import UserManagementController
 from epiceventsCRM.models.models import User
 
@@ -198,4 +199,75 @@ class UserManagementView:
             return True
         else:
             print("\nErreur: Utilisateur non trouvé ou vous n'avez pas la permission de le supprimer.")
-            return False 
+            return False
+            
+    @staticmethod
+    def register_commands(cli_group, get_session, get_token):
+        """
+        Enregistre les commandes CLI pour la gestion des utilisateurs
+        
+        Args:
+            cli_group: Groupe de commandes Click
+            get_session: Fonction pour obtenir une session DB
+            get_token: Fonction pour obtenir le token JWT
+        """
+        
+        @cli_group.group()
+        def user():
+            """Gestion des utilisateurs"""
+            pass
+        
+        @user.command("list")
+        def list_users():
+            """Liste tous les utilisateurs accessibles"""
+            session = get_session()
+            token = get_token()
+            if not token:
+                print("Erreur: Vous devez être connecté pour accéder aux utilisateurs.")
+                return
+            user_view = UserManagementView()
+            user_view.list_users(session, token)
+        
+        @user.command("get")
+        def get_user():
+            """Affiche les détails d'un utilisateur spécifique"""
+            session = get_session()
+            token = get_token()
+            if not token:
+                print("Erreur: Vous devez être connecté pour accéder aux utilisateurs.")
+                return
+            user_view = UserManagementView()
+            user_view.get_user(session, token)
+        
+        @user.command("create")
+        def create_user():
+            """Crée un nouvel utilisateur"""
+            session = get_session()
+            token = get_token()
+            if not token:
+                print("Erreur: Vous devez être connecté pour créer un utilisateur.")
+                return
+            user_view = UserManagementView()
+            user_view.create_user(session, token)
+        
+        @user.command("update")
+        def update_user():
+            """Met à jour un utilisateur existant"""
+            session = get_session()
+            token = get_token()
+            if not token:
+                print("Erreur: Vous devez être connecté pour mettre à jour un utilisateur.")
+                return
+            user_view = UserManagementView()
+            user_view.update_user(session, token)
+        
+        @user.command("delete")
+        def delete_user():
+            """Supprime un utilisateur existant"""
+            session = get_session()
+            token = get_token()
+            if not token:
+                print("Erreur: Vous devez être connecté pour supprimer un utilisateur.")
+                return
+            user_view = UserManagementView()
+            user_view.delete_user(session, token) 
