@@ -1,175 +1,174 @@
 from typing import List, Optional, Dict
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 from datetime import datetime
 
-from epiceventsCRM.models.models import Event
+from epiceventsCRM.models.models import Event, Client, Contract
 from epiceventsCRM.dao.base_dao import BaseDAO
 
 
-class EventDAO(BaseDAO):
+class EventDAO(BaseDAO[Event]):
     """
     DAO pour les opérations sur les événements.
     """
     
-    def __init__(self, session: Session):
+    def __init__(self):
         """
-        Initialise la classe EventDAO avec une session DB
+        Initialise le DAO avec le modèle Event.
+        """
+        super().__init__(Event)
+    
+    def get_by_client(self, db: Session, client_id: int) -> List[Event]:
+        """
+        Récupère tous les événements associés à un client.
         
         Args:
-            session: Session SQLAlchemy active
-        """
-        self.session = session
-        self.model = Event
-    
-    def create_event(self, 
-                    name: str, 
-                    contract_id: int, 
-                    client_id: int, 
-                    start_event: datetime, 
-                    end_event: datetime, 
-                    location: str, 
-                    support_contact_id: Optional[int] = None,
-                    attendees: Optional[int] = None,
-                    notes: Optional[str] = None) -> Event:
-        """
-        Crée un nouvel événement
-        
-        Args:
-            name: Nom de l'événement
-            contract_id: ID du contrat associé
-            client_id: ID du client associé
-            start_event: Date et heure de début
-            end_event: Date et heure de fin
-            location: Lieu de l'événement
-            support_contact_id: ID du contact support (optionnel)
-            attendees: Nombre de participants (optionnel)
-            notes: Notes supplémentaires (optionnel)
-            
-        Returns:
-            Event: L'événement créé
-        """
-        event = Event(
-            name=name,
-            contract_id=contract_id,
-            client_id=client_id,
-            start_event=start_event,
-            end_event=end_event,
-            location=location,
-            support_contact_id=support_contact_id,
-            attendees=attendees,
-            notes=notes
-        )
-        
-        self.session.add(event)
-        self.session.commit()
-        return event
-    
-    def get_event_by_id(self, event_id: int) -> Optional[Event]:
-        """
-        Récupère un événement par son ID
-        
-        Args:
-            event_id: ID de l'événement
-            
-        Returns:
-            Event or None: L'événement trouvé ou None
-        """
-        return self.session.query(Event).filter(Event.id == event_id).first()
-    
-    def get_all_events(self) -> List[Event]:
-        """
-        Récupère tous les événements
-        
-        Returns:
-            List[Event]: Liste de tous les événements
-        """
-        return self.session.query(Event).all()
-    
-    def get_events_by_client(self, client_id: int) -> List[Event]:
-        """
-        Récupère tous les événements associés à un client
-        
-        Args:
-            client_id: ID du client
+            db (Session): La session de base de données
+            client_id (int): L'ID du client
             
         Returns:
             List[Event]: Liste des événements du client
         """
-        return self.session.query(Event).filter(Event.client_id == client_id).all()
+        return list(db.scalars(select(self.model).where(self.model.client_id == client_id)))
     
-    def get_events_by_contract(self, contract_id: int) -> List[Event]:
+    def get_by_contract(self, db: Session, contract_id: int) -> List[Event]:
         """
-        Récupère tous les événements associés à un contrat
+        Récupère tous les événements associés à un contrat.
         
         Args:
-            contract_id: ID du contrat
+            db (Session): La session de base de données
+            contract_id (int): L'ID du contrat
             
         Returns:
             List[Event]: Liste des événements du contrat
         """
-        return self.session.query(Event).filter(Event.contract_id == contract_id).all()
+        return list(db.scalars(select(self.model).where(self.model.contract_id == contract_id)))
     
-    def get_events_by_support_contact(self, support_contact_id: int) -> List[Event]:
+    def get_by_support(self, db: Session, support_id: int) -> List[Event]:
         """
-        Récupère tous les événements associés à un contact support
+        Récupère tous les événements assignés à un support.
         
         Args:
-            support_contact_id: ID du contact support
+            db (Session): La session de base de données
+            support_id (int): L'ID du support
             
         Returns:
-            List[Event]: Liste des événements gérés par le contact support
+            List[Event]: Liste des événements assignés au support
         """
-        return self.session.query(Event).filter(Event.support_contact_id == support_contact_id).all()
+        return list(db.scalars(select(self.model).where(self.model.support_contact_id == support_id)))
     
-    def update_event(self, event_id: int, data: Dict) -> Optional[Event]:
+    def get_by_commercial(self, db: Session, commercial_id: int) -> List[Event]:
         """
-        Met à jour un événement
+        Récupère tous les événements des contrats des clients dont un commercial est responsable.
         
         Args:
-            event_id: ID de l'événement à mettre à jour
-            data: Dictionnaire contenant les champs à mettre à jour
+            db (Session): La session de base de données
+            commercial_id (int): L'ID du commercial
             
         Returns:
-            Event or None: L'événement mis à jour ou None
+            List[Event]: Liste des événements liés au commercial
         """
-        event = self.get_event_by_id(event_id)
+        # Cette méthode nécessite généralement une jointure avec les tables Contract et Client
+        # Voici une implémentation simplifiée qui suppose que les relations sont correctement définies
+        stmt = select(self.model).join(
+            self.model.contract
+        ).join(
+            self.model.contract.client
+        ).where(
+            self.model.contract.client.sales_contact_id == commercial_id
+        )
+        return list(db.scalars(stmt))
+    
+    def update_support(self, db: Session, event_id: int, support_id: int) -> Optional[Event]:
+        """
+        Met à jour le support assigné à un événement.
+        
+        Args:
+            db (Session): La session de base de données
+            event_id (int): L'ID de l'événement à mettre à jour
+            support_id (int): L'ID du nouveau support
+            
+        Returns:
+            Event or None: L'événement mis à jour ou None si non trouvé
+        """
+        event = self.get(db, event_id)
         if not event:
             return None
-        
-        for key, value in data.items():
-            if hasattr(event, key):
-                setattr(event, key, value)
-        
-        self.session.commit()
-        return event
+        return self.update(db, event, {"support_contact_id": support_id})
     
-    def assign_support_contact(self, event_id: int, support_contact_id: int) -> Optional[Event]:
+    def update_notes(self, db: Session, event_id: int, notes: str) -> Optional[Event]:
         """
-        Attribue un contact support à un événement
+        Met à jour les notes d'un événement.
         
         Args:
-            event_id: ID de l'événement
-            support_contact_id: ID du contact support
+            db (Session): La session de base de données
+            event_id (int): L'ID de l'événement à mettre à jour
+            notes (str): Les nouvelles notes
             
         Returns:
-            Event or None: L'événement mis à jour ou None
+            Event or None: L'événement mis à jour ou None si non trouvé
         """
-        return self.update_event(event_id, {"support_contact_id": support_contact_id})
-    
-    def delete_event(self, event_id: int) -> bool:
-        """
-        Supprime un événement
-        
-        Args:
-            event_id: ID de l'événement à supprimer
-            
-        Returns:
-            bool: True si supprimé avec succès, False sinon
-        """
-        event = self.get_event_by_id(event_id)
+        event = self.get(db, event_id)
         if not event:
-            return False
+            return None
+        return self.update(db, event, {"notes": notes})
+
+    def assign_support_contact(self, db: Session, event_id: int, support_contact_id: int) -> Optional[Event]:
+        """
+        Assigne un contact support à un événement existant.
         
-        self.session.delete(event)
-        self.session.commit()
-        return True 
+        Args:
+            db (Session): La session de base de données
+            event_id (int): L'ID de l'événement
+            support_contact_id (int): L'ID du contact support
+            
+        Returns:
+            Event or None: L'événement mis à jour ou None si non trouvé
+        """
+        event = self.get(db, event_id)
+        if not event:
+            return None
+            
+        return self.update(db, event, {"support_contact_id": support_contact_id})
+
+    def create_event(self, db: Session, event_data: Dict) -> Optional[Event]:
+        """
+        Crée un nouvel événement avec les informations du client récupérées automatiquement.
+        
+        Args:
+            db (Session): La session de base de données
+            event_data (Dict): Les données de l'événement
+            
+        Returns:
+            Optional[Event]: L'événement créé ou None si erreur
+        """
+        # Récupérer le contrat associé à l'événement pour obtenir le client
+        contract_id = event_data.get("contract_id")
+        if contract_id is None:
+            print("Aucun contract_id fourni dans les données de l'événement")
+            return None
+        
+        # Récupérer le contrat
+        contract = db.query(Contract).filter(Contract.id == contract_id).first()
+        if not contract:
+            print(f"Contrat avec ID {contract_id} non trouvé dans la base de données")
+            return None
+        
+        # Récupérer le client à partir du contrat
+        client_id = contract.client_id
+        client = db.query(Client).filter(Client.id == client_id).first()
+        if client:
+            print(f"Client trouvé: {client.fullname}, Email: {client.email}")
+            # Ajouter les informations du client dans l'événement
+            event_data["client_id"] = client.id
+            event_data["client_name"] = client.fullname
+            event_data["client_contact"] = f"Email: {client.email}, Tél: {client.phone_number}"
+        else:
+            print(f"Client avec ID {client_id} non trouvé dans la base de données")
+            # Valeurs par défaut pour éviter les problèmes
+            event_data["client_id"] = None
+            event_data["client_name"] = "Information non disponible"
+            event_data["client_contact"] = "Information non disponible"
+        
+        # Créer l'événement
+        return self.create(db, event_data) 

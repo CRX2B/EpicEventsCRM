@@ -1,17 +1,206 @@
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from sqlalchemy.orm import Session
 import click
 from epiceventsCRM.controllers.client_controller import ClientController
 from epiceventsCRM.models.models import Client
+from epiceventsCRM.views.base_view import BaseView
+import tabulate
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.prompt import Prompt, Confirm
 
-class ClientView:
+console = Console()
+
+class ClientView(BaseView):
     """
-    Vue pour les opérations sur les clients.
+    Vue pour la gestion des clients via CLI.
     """
     
     def __init__(self):
-        self.client_controller = ClientController()
+        """
+        Initialise la vue client avec le contrôleur approprié.
+        """
+        super().__init__(ClientController(), "client", "clients")
     
+    @staticmethod
+    def register_commands(cli: click.Group, get_session, get_token):
+        """
+        Enregistre les commandes de gestion des clients.
+        
+        Args:
+            cli (click.Group): Le groupe de commandes CLI
+            get_session: La fonction pour obtenir une session de base de données
+            get_token: La fonction pour obtenir un token JWT
+        """
+        @cli.group()
+        def client():
+            """Commandes de gestion des clients."""
+            pass
+        
+        client_view = ClientView()
+        
+        # Ajout des commandes de base (liste, obtenir, supprimer)
+        client.add_command(client_view.create_list_command())
+        client.add_command(client_view.create_get_command())
+        client.add_command(client_view.create_delete_command())
+        
+        # Ajout des commandes spécifiques
+        
+        @client.command("create")
+        @click.option("--fullname", "-f", required=True, help="Nom complet du client")
+        @click.option("--email", "-e", required=True, help="Email du client")
+        @click.option("--phone_number", "-p", required=True, help="Téléphone du client")
+        @click.option("--enterprise", "-c", required=True, help="Entreprise du client")
+        @click.pass_context
+        def create_client(ctx, fullname, email, phone_number, enterprise):
+            """Crée un nouveau client."""
+            db = get_session()
+            token = get_token()
+            
+            if not token:
+                console.print(Panel.fit("[bold red]Veuillez vous connecter d'abord.[/bold red]"))
+                return
+            
+            client_data = {
+                "fullname": fullname,
+                "email": email,
+                "phone_number": phone_number,
+                "enterprise": enterprise
+                # sales_contact_id sera automatiquement attribué dans le contrôleur
+            }
+            
+            client = client_view.controller.create(token, db, client_data)
+            
+            if client:
+                console.print(Panel.fit(f"[bold green]Client {client.id} créé avec succès.[/bold green]"))
+                client_view.display_item(client)
+            else:
+                console.print(Panel.fit("[bold red]Échec de la création du client. Vérifiez vos permissions.[/bold red]"))
+        
+        @client.command("update")
+        @click.argument("id", type=int)
+        @click.option("--fullname", "-f", help="Nom complet du client")
+        @click.option("--email", "-e", help="Email du client")
+        @click.option("--phone_number", "-p", help="Téléphone du client")
+        @click.option("--enterprise", "-c", help="Entreprise du client")
+        @click.pass_context
+        def update_client(ctx, id, fullname, email, phone_number, enterprise):
+            """Met à jour un client existant."""
+            db = get_session()
+            token = get_token()
+            
+            if not token:
+                console.print(Panel.fit("[bold red]Veuillez vous connecter d'abord.[/bold red]"))
+                return
+            
+            client_data = {}
+            if fullname:
+                client_data["fullname"] = fullname
+            if email:
+                client_data["email"] = email
+            if phone_number:
+                client_data["phone_number"] = phone_number
+            if enterprise:
+                client_data["enterprise"] = enterprise
+            
+            if not client_data:
+                console.print(Panel.fit("[bold yellow]Aucune donnée à mettre à jour.[/bold yellow]"))
+                return
+            
+            client = client_view.controller.update(token, db, id, client_data)
+            
+            if client:
+                console.print(Panel.fit(f"[bold green]Client {id} mis à jour avec succès.[/bold green]"))
+                client_view.display_item(client)
+            else:
+                console.print(Panel.fit(f"[bold red]Échec de la mise à jour du client {id}. Vérifiez l'ID et vos permissions.[/bold red]"))
+        
+        @client.command("my-clients")
+        @click.pass_context
+        def my_clients(ctx):
+            """Liste mes clients (pour les commerciaux)."""
+            db = get_session()
+            token = get_token()
+            
+            if not token:
+                console.print(Panel.fit("[bold red]Veuillez vous connecter d'abord.[/bold red]"))
+                return
+            
+            clients = client_view.controller.get_clients_by_commercial(token, db)
+            
+            if not clients:
+                console.print(Panel.fit("[bold yellow]Vous n'avez pas de clients assignés.[/bold yellow]"))
+                return
+                
+            client_view.display_items(clients)
+    
+    def display_items(self, clients: List[Any]):
+        """
+        Affiche une liste de clients sous forme de tableau.
+        
+        Args:
+            clients (List[Any]): La liste des clients à afficher
+        """
+        table = Table(title="Liste des clients")
+        
+        # Définition des colonnes
+        table.add_column("ID", style="cyan", justify="right")
+        table.add_column("Nom", style="magenta")
+        table.add_column("Email", style="green")
+        table.add_column("Entreprise", style="blue")
+        table.add_column("Commercial", style="yellow")
+        table.add_column("Créé le", style="dim")
+        
+        # Ajout des lignes
+        for client in clients:
+            commercial = client.sales_contact.fullname if client.sales_contact else "Non assigné"
+            created = client.create_date.strftime("%d/%m/%Y") if client.create_date else "-"
+            
+            table.add_row(
+                str(client.id),
+                client.fullname,
+                client.email,
+                client.enterprise,
+                commercial,
+                created
+            )
+        
+        # Affichage du tableau
+        console.print(table)
+    
+    def display_item(self, client: Any):
+        """
+        Affiche un client détaillé.
+        
+        Args:
+            client (Any): Le client à afficher
+        """
+        table = Table(title=f"Détails du client #{client.id}")
+        
+        # Définition des colonnes
+        table.add_column("Propriété", style="cyan")
+        table.add_column("Valeur", style="green")
+        
+        # Ajout des informations
+        commercial = client.sales_contact.fullname if client.sales_contact else "Non assigné"
+        
+        # Formatage des dates
+        create_date = client.create_date.strftime("%d/%m/%Y %H:%M") if client.create_date else "Non définie"
+        update_date = client.update_date.strftime("%d/%m/%Y %H:%M") if client.update_date else "Non définie"
+        
+        table.add_row("ID", str(client.id))
+        table.add_row("Nom complet", client.fullname)
+        table.add_row("Email", client.email)
+        table.add_row("Téléphone", str(client.phone_number))
+        table.add_row("Entreprise", client.enterprise)
+        table.add_row("Commercial", commercial)
+        table.add_row("Date de création", create_date)
+        table.add_row("Dernière mise à jour", update_date)
+        
+        # Affichage du tableau
+        console.print(table)
+
     def display_client(self, client: Client) -> Dict:
         """
         Affiche les informations d'un client.
@@ -67,8 +256,8 @@ class ClientView:
             if field not in client_data:
                 return {"error": f"Le champ '{field}' est obligatoire."}
         
-        # Création du client
-        client = self.client_controller.create_client(db, token, client_data)
+        # Création du client - sales_contact_id sera assigné automatiquement par le contrôleur
+        client = self.controller.create(token, db, client_data)
         if not client:
             return {"error": "Vous n'avez pas la permission de créer un client ou le token est invalide."}
             
@@ -89,7 +278,7 @@ class ClientView:
         Returns:
             Dict: Les informations du client ou un message d'erreur
         """
-        client = self.client_controller.get_client(db, token, client_id)
+        client = self.controller.get(token, db, client_id)
         if not client:
             return {"error": "Client non trouvé ou vous n'avez pas la permission d'accéder à ce client."}
             
@@ -110,13 +299,11 @@ class ClientView:
         Returns:
             Dict: La liste des clients ou un message d'erreur
         """
-        clients = self.client_controller.get_all_clients(db, token, skip, limit)
-        if not clients:
-            return {"message": "Aucun client trouvé ou vous n'avez pas la permission d'accéder aux clients."}
-            
+        clients = self.controller.get_all(db, token, skip, limit)
+        
         return {
-            "clients": self.display_clients(clients),
-            "count": len(clients)
+            "clients": self.display_clients(clients) if clients else [],
+            "count": len(clients) if clients else 0
         }
     
     def get_my_clients(self, db: Session, token: str) -> Dict:
@@ -130,7 +317,7 @@ class ClientView:
         Returns:
             Dict: La liste des clients ou un message d'erreur
         """
-        clients = self.client_controller.get_my_clients(db, token)
+        clients = self.controller.get_clients_by_commercial(token, db)
         if not clients:
             return {"message": "Aucun client trouvé ou vous n'avez pas la permission d'accéder aux clients."}
             
@@ -152,7 +339,7 @@ class ClientView:
         Returns:
             Dict: Les informations du client mis à jour ou un message d'erreur
         """
-        client = self.client_controller.update_client(db, token, client_id, client_data)
+        client = self.controller.update(token, db, client_id, client_data)
         if not client:
             return {"error": "Client non trouvé, vous n'avez pas la permission de mettre à jour ce client ou le token est invalide."}
             
@@ -173,176 +360,10 @@ class ClientView:
         Returns:
             Dict: Un message de succès ou d'erreur
         """
-        success = self.client_controller.delete_client(db, token, client_id)
+        success = self.controller.delete(token, db, client_id)
         if not success:
             return {"error": "Client non trouvé, vous n'avez pas la permission de supprimer ce client ou le token est invalide."}
             
         return {
             "message": "Client supprimé avec succès."
-        }
-        
-    @staticmethod
-    def register_commands(cli_group, get_session, get_token):
-        """
-        Enregistre les commandes CLI pour la gestion des clients
-        
-        Args:
-            cli_group: Groupe de commandes Click
-            get_session: Fonction pour obtenir une session DB
-            get_token: Fonction pour obtenir le token JWT
-        """
-        
-        @cli_group.group()
-        def client():
-            """Gestion des clients"""
-            pass
-        
-        @client.command("list")
-        def list_clients():
-            """Liste tous les clients accessibles"""
-            session = get_session()
-            token = get_token()
-            if not token:
-                click.echo("Erreur: Vous devez être connecté pour accéder aux clients.")
-                return
-            client_view = ClientView()
-            result = client_view.get_all_clients(session, token)
-            if "error" in result:
-                click.echo(f"Erreur: {result['error']}")
-            elif "clients" in result:
-                click.echo(f"Clients ({result['count']} trouvés):")
-                for client_info in result["clients"]:
-                    click.echo("-" * 50)
-                    click.echo(f"ID: {client_info['id']}")
-                    click.echo(f"Nom: {client_info['fullname']}")
-                    click.echo(f"Email: {client_info['email']}")
-                    click.echo(f"Téléphone: {client_info['phone_number']}")
-                    click.echo(f"Entreprise: {client_info['enterprise']}")
-                    click.echo(f"Commercial: {client_info['sales_contact']}")
-                    click.echo("-" * 50)
-            else:
-                click.echo(result["message"])
-        
-        @client.command("get")
-        @click.argument("client_id", type=int)
-        def get_client(client_id):
-            """Affiche les détails d'un client spécifique"""
-            session = get_session()
-            token = get_token()
-            if not token:
-                click.echo("Erreur: Vous devez être connecté pour accéder aux clients.")
-                return
-            client_view = ClientView()
-            result = client_view.get_client(session, token, client_id)
-            if "error" in result:
-                click.echo(f"Erreur: {result['error']}")
-            else:
-                client_info = result["client"]
-                click.echo("-" * 50)
-                click.echo(f"ID: {client_info['id']}")
-                click.echo(f"Nom: {client_info['fullname']}")
-                click.echo(f"Email: {client_info['email']}")
-                click.echo(f"Téléphone: {client_info['phone_number']}")
-                click.echo(f"Entreprise: {client_info['enterprise']}")
-                click.echo(f"Date de création: {client_info['create_date']}")
-                click.echo(f"Date de mise à jour: {client_info['update_date']}")
-                click.echo(f"Commercial ID: {client_info['sales_contact_id']}")
-                click.echo(f"Commercial: {client_info['sales_contact']}")
-                click.echo("-" * 50)
-        
-        @client.command("create")
-        def create_client():
-            """Crée un nouveau client"""
-            session = get_session()
-            token = get_token()
-            if not token:
-                click.echo("Erreur: Vous devez être connecté pour créer un client.")
-                return
-            
-            # Collecter les données du client
-            fullname = click.prompt("Nom complet")
-            email = click.prompt("Email")
-            phone_number = click.prompt("Numéro de téléphone", type=int)
-            enterprise = click.prompt("Entreprise")
-            
-            client_data = {
-                "fullname": fullname,
-                "email": email,
-                "phone_number": phone_number,
-                "enterprise": enterprise
-            }
-            
-            client_view = ClientView()
-            result = client_view.create_client(session, token, client_data)
-            
-            if "error" in result:
-                click.echo(f"Erreur: {result['error']}")
-            else:
-                click.echo(result["message"])
-        
-        @client.command("update")
-        @click.argument("client_id", type=int)
-        def update_client(client_id):
-            """Met à jour un client existant"""
-            session = get_session()
-            token = get_token()
-            if not token:
-                click.echo("Erreur: Vous devez être connecté pour mettre à jour un client.")
-                return
-            
-            # Récupérer le client actuel
-            client_view = ClientView()
-            current_client = client_view.get_client(session, token, client_id)
-            
-            if "error" in current_client:
-                click.echo(f"Erreur: {current_client['error']}")
-                return
-                
-            # Collecter les nouvelles données
-            client_data = {}
-            
-            if click.confirm("Mettre à jour le nom?"):
-                client_data["fullname"] = click.prompt("Nouveau nom complet")
-                
-            if click.confirm("Mettre à jour l'email?"):
-                client_data["email"] = click.prompt("Nouvel email")
-                
-            if click.confirm("Mettre à jour le numéro de téléphone?"):
-                client_data["phone_number"] = click.prompt("Nouveau numéro de téléphone", type=int)
-                
-            if click.confirm("Mettre à jour l'entreprise?"):
-                client_data["enterprise"] = click.prompt("Nouvelle entreprise")
-                
-            if not client_data:
-                click.echo("Aucune modification demandée.")
-                return
-                
-            # Mettre à jour le client
-            result = client_view.update_client(session, token, client_id, client_data)
-            
-            if "error" in result:
-                click.echo(f"Erreur: {result['error']}")
-            else:
-                click.echo(result["message"])
-        
-        @client.command("delete")
-        @click.argument("client_id", type=int)
-        def delete_client(client_id):
-            """Supprime un client existant"""
-            session = get_session()
-            token = get_token()
-            if not token:
-                click.echo("Erreur: Vous devez être connecté pour supprimer un client.")
-                return
-                
-            if not click.confirm(f"Êtes-vous sûr de vouloir supprimer le client {client_id}?"):
-                click.echo("Suppression annulée.")
-                return
-                
-            client_view = ClientView()
-            result = client_view.delete_client(session, token, client_id)
-            
-            if "error" in result:
-                click.echo(f"Erreur: {result['error']}")
-            else:
-                click.echo(result["message"]) 
+        } 

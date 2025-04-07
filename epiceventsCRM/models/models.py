@@ -66,6 +66,8 @@ class Event(Base):
     name = Column(String)
     contract_id = Column(Integer, ForeignKey('contracts.id'))
     client_id = Column(Integer, ForeignKey('clients.id'))
+    client_name = Column(String)
+    client_contact = Column(String)
     start_event = Column(DateTime)
     end_event = Column(DateTime)
     location = Column(String)

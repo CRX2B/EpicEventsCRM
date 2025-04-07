@@ -6,27 +6,32 @@ from datetime import datetime
 from epiceventsCRM.dao.contract_dao import ContractDAO
 from epiceventsCRM.dao.client_dao import ClientDAO
 from epiceventsCRM.dao.user_dao import UserDAO
-from epiceventsCRM.models.models import Contract, User, Department
+from epiceventsCRM.models.models import Contract, User, Department, Client
+from epiceventsCRM.controllers.base_controller import BaseController
+from epiceventsCRM.utils.permissions import require_permission
+from epiceventsCRM.utils.token_manager import decode_token
 
 
-class ContractController:
+class ContractController(BaseController[Contract]):
     """
-    Contrôleur pour gérer les contrats
+    Contrôleur pour la gestion des contrats.
+    Accessible principalement aux départements commercial et gestion.
     """
     
-    def __init__(self, session: Session):
+    def __init__(self):
         """
-        Initialise le contrôleur avec une session DB
+        Initialise le contrôleur des contrats avec le DAO approprié.
+        """
+        super().__init__(ContractDAO(), "contract")
+        self.client_dao = ClientDAO()
+        self.user_dao = UserDAO()
         
-        Args:
-            session: Session SQLAlchemy active
-        """
-        self.session = session
-        self.contract_dao = ContractDAO(session)
-        self.client_dao = ClientDAO(session)
-        self.user_dao = UserDAO(session)
+        # Alias pour la compatibilité avec les tests
+        self.list_contracts = self.get_all
+        self.get_contract = self.get
+        self.update_contract = self.update
     
-    def create_contract(self, token: str, client_id: int, amount: float, sales_contact_id: Optional[int] = None) -> Tuple[bool, Union[Contract, str]]:
+    def create_contract(self, token: str, client_id: int, amount: float, status: bool = False) -> Tuple[bool, Union[Contract, str]]:
         """
         Crée un nouveau contrat
         
@@ -34,19 +39,30 @@ class ContractController:
             token: Token JWT de l'utilisateur connecté
             client_id: ID du client associé au contrat
             amount: Montant total du contrat
-            sales_contact_id: ID du commercial responsable (optionnel)
+            status: Statut du contrat (False = non signé, True = signé)
             
         Returns:
             Tuple[bool, Union[Contract, str]]: (succès, contrat ou message d'erreur)
         """
+        # Obtention de la session de base de données depuis la méthode
+        from epiceventsCRM.database import get_session
+        db = get_session()
+        
         try:
             # Vérifier l'authentification et les autorisations
             payload = jwt.decode(token, options={"verify_signature": False})
-            user_id = payload.get('user_id')
-            user = self.user_dao.get_user_by_id(user_id)
             
+            # Récupérer l'ID de l'utilisateur depuis le token 
+            # (selon le format du token, la clé peut être 'user_id' ou 'sub')
+            user_id = payload.get('user_id') or payload.get('sub')
+            
+            if not user_id:
+                return False, "Token invalide: ID utilisateur manquant"
+                
+            # Obtenez l'utilisateur à partir de l'ID
+            user = db.query(User).filter(User.id == user_id).first()
             if not user:
-                return False, "Utilisateur non trouvé"
+                return False, f"Utilisateur avec ID {user_id} non trouvé"
                 
             # Vérifier si l'utilisateur est dans le département gestion
             department_name = user.department.departement_name.lower()
@@ -54,17 +70,15 @@ class ContractController:
                 return False, "Accès refusé: seul le département gestion peut créer des contrats"
             
             # Vérifier si le client existe
-            client = self.client_dao.get_client_by_id(client_id)
+            client = db.query(Client).filter(Client.id == client_id).first()
             if not client:
                 return False, f"Client avec ID {client_id} non trouvé"
             
-            # Si sales_contact_id n'est pas fourni, utiliser le commercial du client
-            if sales_contact_id is None:
-                # Utiliser le commercial du client
-                sales_contact_id = client.sales_contact_id
+            # Utiliser le commercial du client
+            sales_contact_id = client.sales_contact_id
             
             # Vérifier si le commercial existe et est bien dans le département commercial
-            sales_contact = self.user_dao.get_user_by_id(sales_contact_id)
+            sales_contact = db.query(User).filter(User.id == sales_contact_id).first()
             if not sales_contact:
                 return False, f"Commercial avec ID {sales_contact_id} non trouvé"
                 
@@ -72,120 +86,129 @@ class ContractController:
                 return False, "Le contact commercial doit être du département commercial"
             
             # Créer le contrat
-            contract = self.contract_dao.create_contract(
-                client_id=client_id,
-                amount=amount,
-                sales_contact_id=sales_contact_id
-            )
+            contract_data = {
+                "client_id": client_id,
+                "amount": amount,
+                "remaining_amount": amount,  # Au départ, montant restant = montant total
+                "create_date": datetime.now(),
+                "status": status,
+                "sales_contact_id": sales_contact_id
+            }
+            
+            # Créer le contrat dans la base de données
+            contract = Contract(**contract_data)
+            db.add(contract)
+            db.commit()
+            db.refresh(contract)
             
             return True, contract
-            
+        
         except Exception as e:
+            db.rollback()
             return False, f"Erreur lors de la création du contrat: {str(e)}"
+        finally:
+            db.close()
     
-    def get_contract(self, token: str, contract_id: int) -> Tuple[bool, Union[Contract, str]]:
+    @require_permission("read_contract")
+    def get_contracts_by_client(self, token: str, db: Session, client_id: int) -> List[Contract]:
         """
-        Récupère un contrat par son ID
+        Récupère tous les contrats d'un client.
         
         Args:
-            token: Token JWT de l'utilisateur connecté
-            contract_id: ID du contrat à récupérer
+            token (str): Le token JWT
+            db (Session): La session de base de données
+            client_id (int): L'ID du client
             
         Returns:
-            Tuple[bool, Union[Contract, str]]: (succès, contrat ou message d'erreur)
+            List[Contract]: Liste des contrats du client
         """
-        try:
-            # Vérifier l'authentification
-            payload = jwt.decode(token, options={"verify_signature": False})
-            user_id = payload.get('user_id')
-            user = self.user_dao.get_user_by_id(user_id)
-            
-            if not user:
-                return False, "Utilisateur non trouvé"
-                
-            # Récupérer le contrat
-            contract = self.contract_dao.get_contract_by_id(contract_id)
-            if not contract:
-                return False, f"Contrat avec ID {contract_id} non trouvé"
-            
-            # Tous les collaborateurs peuvent lire tous les contrats
-            return True, contract
-                
-        except Exception as e:
-            return False, f"Erreur lors de la récupération du contrat: {str(e)}"
+        return self.dao.get_by_client(db, client_id)
     
-    def list_contracts(self, token: str) -> Tuple[bool, Union[List[Contract], str]]:
+    @require_permission("read_contract")
+    def get_contracts_by_commercial(self, token: str, db: Session) -> List[Contract]:
         """
-        Liste tous les contrats accessibles par l'utilisateur
+        Récupère tous les contrats gérés par un commercial.
         
         Args:
-            token: Token JWT de l'utilisateur connecté
+            token (str): Le token JWT
+            db (Session): La session de base de données
             
         Returns:
-            Tuple[bool, Union[List[Contract], str]]: (succès, liste de contrats ou message d'erreur)
+            List[Contract]: Liste des contrats du commercial
         """
-        try:
-            # Vérifier l'authentification
-            payload = jwt.decode(token, options={"verify_signature": False})
-            user_id = payload.get('user_id')
-            user = self.user_dao.get_user_by_id(user_id)
-            
-            if not user:
-                return False, "Utilisateur non trouvé"
-                
-            # Tous les collaborateurs peuvent lire tous les contrats
-            contracts = self.contract_dao.get_all_contracts()
-            return True, contracts
-            
-        except Exception as e:
-            return False, f"Erreur lors de la récupération des contrats: {str(e)}"
+        # Récupérer l'ID de l'utilisateur depuis le token
+        payload = decode_token(token)
+        if not payload or "user_id" not in payload:
+            return []
+        
+        user_id = payload["user_id"]
+        return self.dao.get_by_commercial(db, user_id)
     
-    def update_contract(self, token: str, contract_id: int, update_data: Dict) -> Tuple[bool, Union[Contract, str]]:
+    @require_permission("update_contract")
+    def update_contract_status(self, token: str, db: Session, contract_id: int, status: bool) -> Optional[Contract]:
         """
-        Met à jour un contrat existant
+        Met à jour le statut d'un contrat (signé ou non).
         
         Args:
-            token: Token JWT de l'utilisateur connecté
-            contract_id: ID du contrat à mettre à jour
-            update_data: Nouvelles données du contrat
+            token (str): Le token JWT
+            db (Session): La session de base de données
+            contract_id (int): L'ID du contrat
+            status (bool): Le nouveau statut
             
         Returns:
-            Tuple[bool, Union[Contract, str]]: (succès, contrat mis à jour ou message d'erreur)
+            Optional[Contract]: Le contrat mis à jour si trouvé, None sinon
         """
-        try:
-            # Vérifier l'authentification
-            payload = jwt.decode(token, options={"verify_signature": False})
-            user_id = payload.get('user_id')
-            user = self.user_dao.get_user_by_id(user_id)
+        contract = self.dao.get(db, contract_id)
+        if not contract:
+            return None
+        
+        # Vérifier si le commercial actuel est l'utilisateur qui fait la requête
+        payload = decode_token(token)
+        if not payload or "user_id" not in payload or "department" not in payload:
+            return None
+        
+        user_id = payload["user_id"]
+        department = payload["department"]
+        
+        # Si c'est un commercial, il ne peut modifier que les contrats liés à ses clients
+        if department == "commercial" and contract.client.commercial_contact_id != user_id:
+            return None
+        
+        # Mise à jour du statut
+        return self.dao.update_status(db, contract, status)
+    
+    @require_permission("update_contract")
+    def update_contract_amount(self, token: str, db: Session, contract_id: int, amount: float) -> Optional[Contract]:
+        """
+        Met à jour le montant d'un contrat.
+        
+        Args:
+            token (str): Le token JWT
+            db (Session): La session de base de données
+            contract_id (int): L'ID du contrat
+            amount (float): Le nouveau montant
             
-            if not user:
-                return False, "Utilisateur non trouvé"
-                
-            # Récupérer le contrat
-            contract = self.contract_dao.get_contract_by_id(contract_id)
-            if not contract:
-                return False, f"Contrat avec ID {contract_id} non trouvé"
-                
-            # Vérifier les permissions selon le département
-            department_name = user.department.departement_name.lower()
-            
-            if department_name == "gestion":
-                # La gestion peut mettre à jour tous les contrats
-                pass
-            elif department_name == "commercial":
-                # Les commerciaux peuvent mettre à jour uniquement leurs contrats
-                client = self.client_dao.get_client_by_id(contract.client_id)
-                if not client or client.sales_contact_id != user_id:
-                    return False, "Accès refusé: ce contrat n'est pas lié à vos clients"
-            else:
-                return False, "Accès refusé: vous n'avez pas la permission de mettre à jour les contrats"
-            
-            # Mettre à jour le contrat
-            updated_contract = self.contract_dao.update_contract(contract_id, update_data)
-            return True, updated_contract
-            
-        except Exception as e:
-            return False, f"Erreur lors de la mise à jour du contrat: {str(e)}"
+        Returns:
+            Optional[Contract]: Le contrat mis à jour si trouvé, None sinon
+        """
+        contract = self.dao.get(db, contract_id)
+        if not contract:
+            return None
+        
+        # Vérifier si le commercial actuel est l'utilisateur qui fait la requête
+        payload = decode_token(token)
+        if not payload or "user_id" not in payload or "department" not in payload:
+            return None
+        
+        user_id = payload["user_id"]
+        department = payload["department"]
+        
+        # Si c'est un commercial, il ne peut modifier que les contrats liés à ses clients
+        if department == "commercial" and contract.client.commercial_contact_id != user_id:
+            return None
+        
+        # Mise à jour du montant
+        return self.dao.update_amount(db, contract, amount)
     
     def delete_contract(self, token: str, contract_id: int) -> Tuple[bool, str]:
         """
@@ -213,12 +236,12 @@ class ContractController:
                 return False, "Accès refusé: seule la gestion peut supprimer des contrats"
             
             # Récupérer le contrat
-            contract = self.contract_dao.get_contract_by_id(contract_id)
+            contract = self.dao.get_contract_by_id(contract_id)
             if not contract:
                 return False, f"Contrat avec ID {contract_id} non trouvé"
             
             # Supprimer le contrat
-            success = self.contract_dao.delete_contract(contract_id)
+            success = self.dao.delete_contract(contract_id)
             if not success:
                 return False, "Échec de la suppression du contrat"
                 

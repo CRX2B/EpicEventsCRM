@@ -1,268 +1,278 @@
 import click
-from typing import Dict, Any, List, Optional
-from datetime import datetime
-from sqlalchemy.orm import Session
-
+from typing import List, Any, Dict
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
 from epiceventsCRM.controllers.contract_controller import ContractController
-from epiceventsCRM.controllers.client_controller import ClientController
+from epiceventsCRM.views.base_view import BaseView, console
 
-
-class ContractView:
+class ContractView(BaseView):
     """
-    Vue pour gérer les contrats via l'interface en ligne de commande
+    Vue pour la gestion des contrats via CLI.
     """
     
-    def __init__(self, session: Session, token: str):
+    def __init__(self):
         """
-        Initialise la vue avec une session et un token
-        
-        Args:
-            session: Session SQLAlchemy active
-            token: Token JWT pour l'authentification
+        Initialise la vue contrat avec le contrôleur approprié.
         """
-        self.session = session
-        self.token = token
-        self.contract_controller = ContractController(session)
-        self.client_controller = ClientController(session)
-    
-    def display_contract(self, contract: Dict) -> None:
-        """
-        Affiche les détails d'un contrat
-        
-        Args:
-            contract: Dictionnaire représentant un contrat
-        """
-        click.echo("-" * 50)
-        click.echo(f"ID: {contract.id}")
-        click.echo(f"Client ID: {contract.client_id}")
-        click.echo(f"Montant total: {contract.amount} €")
-        click.echo(f"Montant restant: {contract.remaining_amount} €")
-        click.echo(f"Date de création: {contract.create_date}")
-        click.echo(f"Statut: {'Signé' if contract.status else 'Non signé'}")
-        click.echo(f"Commercial ID: {contract.sales_contact_id}")
-        click.echo("-" * 50)
-    
-    def list_contracts(self) -> None:
-        """
-        Affiche la liste des contrats accessibles par l'utilisateur
-        """
-        success, result = self.contract_controller.list_contracts(self.token)
-        
-        if not success:
-            click.echo(f"Erreur: {result}")
-            return
-            
-        if not result:
-            click.echo("Aucun contrat trouvé.")
-            return
-            
-        click.echo(f"Liste des contrats ({len(result)} trouvés):")
-        for contract in result:
-            self.display_contract(contract)
-    
-    def get_contract_by_id(self, contract_id: int) -> None:
-        """
-        Affiche les détails d'un contrat spécifique
-        
-        Args:
-            contract_id: ID du contrat à afficher
-        """
-        success, result = self.contract_controller.get_contract(self.token, contract_id)
-        
-        if not success:
-            click.echo(f"Erreur: {result}")
-            return
-            
-        click.echo("Détails du contrat:")
-        self.display_contract(result)
-    
-    def create_contract(self) -> None:
-        """
-        Interface pour créer un nouveau contrat
-        """
-        # Afficher la liste des clients pour sélection
-        success, clients = self.client_controller.list_clients(self.token)
-        
-        if not success:
-            click.echo(f"Erreur: {clients}")
-            return
-            
-        if not clients:
-            click.echo("Aucun client trouvé. Veuillez d'abord créer un client.")
-            return
-            
-        click.echo("Liste des clients disponibles:")
-        for i, client in enumerate(clients, 1):
-            click.echo(f"{i}. {client.fullname} (ID: {client.id}) - {client.enterprise}")
-        
-        # Demander à l'utilisateur de sélectionner un client
-        client_index = click.prompt("Sélectionnez un client (numéro)", type=int) - 1
-        
-        if client_index < 0 or client_index >= len(clients):
-            click.echo("Sélection invalide.")
-            return
-            
-        client_id = clients[client_index].id
-        
-        # Demander le montant du contrat
-        amount = click.prompt("Montant du contrat (€)", type=float)
-        
-        # Demander si un commercial spécifique doit être assigné
-        assign_specific = click.confirm("Voulez-vous assigner un commercial spécifique?", default=False)
-        
-        sales_contact_id = None
-        if assign_specific:
-            sales_contact_id = click.prompt("ID du commercial", type=int)
-        
-        # Créer le contrat
-        success, result = self.contract_controller.create_contract(
-            token=self.token,
-            client_id=client_id,
-            amount=amount,
-            sales_contact_id=sales_contact_id
-        )
-        
-        if not success:
-            click.echo(f"Erreur: {result}")
-            return
-            
-        click.echo("Contrat créé avec succès:")
-        self.display_contract(result)
-    
-    def update_contract(self, contract_id: int) -> None:
-        """
-        Interface pour mettre à jour un contrat existant
-        
-        Args:
-            contract_id: ID du contrat à mettre à jour
-        """
-        # Vérifier si le contrat existe et si l'utilisateur y a accès
-        success, contract = self.contract_controller.get_contract(self.token, contract_id)
-        
-        if not success:
-            click.echo(f"Erreur: {contract}")
-            return
-            
-        click.echo("Contrat actuel:")
-        self.display_contract(contract)
-        
-        # Demander quels champs mettre à jour
-        data = {}
-        
-        if click.confirm("Mettre à jour le montant?", default=False):
-            data["amount"] = click.prompt("Nouveau montant (€)", type=float)
-            
-        if click.confirm("Mettre à jour le montant restant?", default=False):
-            data["remaining_amount"] = click.prompt("Nouveau montant restant (€)", type=float)
-            
-        if click.confirm("Mettre à jour le statut?", default=False):
-            data["status"] = click.confirm("Contrat signé?", default=contract.status)
-            
-        if not data:
-            click.echo("Aucune modification demandée.")
-            return
-            
-        # Mettre à jour le contrat
-        success, result = self.contract_controller.update_contract(self.token, contract_id, data)
-        
-        if not success:
-            click.echo(f"Erreur: {result}")
-            return
-            
-        click.echo("Contrat mis à jour avec succès:")
-        self.display_contract(result)
-    
-    def delete_contract(self, contract_id: int) -> None:
-        """
-        Interface pour supprimer un contrat
-        
-        Args:
-            contract_id: ID du contrat à supprimer
-        """
-        # Confirmer la suppression
-        if not click.confirm(f"Êtes-vous sûr de vouloir supprimer le contrat {contract_id}?", default=False):
-            click.echo("Suppression annulée.")
-            return
-            
-        # Supprimer le contrat
-        success, message = self.contract_controller.delete_contract(self.token, contract_id)
-        
-        if not success:
-            click.echo(f"Erreur: {message}")
-            return
-            
-        click.echo(message)
+        super().__init__(ContractController(), "contract", "contracts")
     
     @staticmethod
-    def register_commands(cli_group, get_session, get_token):
+    def register_commands(cli: click.Group, get_session, get_token):
         """
-        Enregistre les commandes CLI pour la gestion des contrats
+        Enregistre les commandes de gestion des contrats.
         
         Args:
-            cli_group: Groupe de commandes Click
-            get_session: Fonction pour obtenir une session DB
-            get_token: Fonction pour obtenir le token JWT
+            cli (click.Group): Le groupe de commandes CLI
+            get_session: La fonction pour obtenir une session de base de données
+            get_token: La fonction pour obtenir un token JWT
         """
-        
-        @cli_group.group()
+        @cli.group()
         def contract():
-            """Gestion des contrats"""
+            """Commandes de gestion des contrats."""
             pass
         
-        @contract.command("list")
-        def list_contracts():
-            """Liste tous les contrats accessibles"""
-            session = get_session()
-            token = get_token()
-            if not token:
-                click.echo("Erreur: Vous devez être connecté pour accéder aux contrats.")
-                return
-            contract_view = ContractView(session, token)
-            contract_view.list_contracts()
+        contract_view = ContractView()
         
-        @contract.command("get")
-        @click.argument("contract_id", type=int)
-        def get_contract(contract_id):
-            """Affiche les détails d'un contrat spécifique"""
-            session = get_session()
-            token = get_token()
-            if not token:
-                click.echo("Erreur: Vous devez être connecté pour accéder aux contrats.")
-                return
-            contract_view = ContractView(session, token)
-            contract_view.get_contract_by_id(contract_id)
+        # Ajout des commandes de base (liste, obtenir, supprimer)
+        contract.add_command(contract_view.create_list_command())
+        contract.add_command(contract_view.create_get_command())
+        contract.add_command(contract_view.create_delete_command())
+        
+        # Ajout des commandes spécifiques
         
         @contract.command("create")
-        def create_contract():
-            """Crée un nouveau contrat"""
-            session = get_session()
+        @click.option("--client", "-c", required=True, type=int, help="ID du client")
+        @click.option("--amount", "-a", required=True, type=float, help="Montant du contrat")
+        @click.option("--signed", "-s", is_flag=True, help="Contrat signé")
+        @click.pass_context
+        def create_contract(ctx, client, amount, signed):
+            """Crée un nouveau contrat."""
+            db = get_session()
             token = get_token()
+            
             if not token:
-                click.echo("Erreur: Vous devez être connecté pour créer un contrat.")
+                console.print(Panel.fit(
+                    "[bold red]Veuillez vous connecter d'abord.[/bold red]",
+                    border_style="red"
+                ))
                 return
-            contract_view = ContractView(session, token)
-            contract_view.create_contract()
+            
+            success, result = contract_view.controller.create_contract(token, client, amount, signed)
+            
+            if success:
+                console.print(Panel.fit(
+                    f"[bold green]Contrat {result.id} créé avec succès.[/bold green]",
+                    border_style="green"
+                ))
+                contract_view.display_item(result)
+            else:
+                console.print(Panel.fit(
+                    f"[bold red]Échec de la création du contrat: {result}[/bold red]",
+                    border_style="red"
+                ))
         
         @contract.command("update")
-        @click.argument("contract_id", type=int)
-        def update_contract(contract_id):
-            """Met à jour un contrat existant"""
-            session = get_session()
+        @click.argument("id", type=int)
+        @click.option("--amount", "-a", type=float, help="Montant du contrat")
+        @click.option("--signed/--unsigned", help="Statut signé du contrat")
+        @click.pass_context
+        def update_contract(ctx, id, amount, signed):
+            """Met à jour un contrat existant."""
+            db = get_session()
             token = get_token()
+            
             if not token:
-                click.echo("Erreur: Vous devez être connecté pour mettre à jour un contrat.")
+                console.print(Panel.fit(
+                    "[bold red]Veuillez vous connecter d'abord.[/bold red]",
+                    border_style="red"
+                ))
                 return
-            contract_view = ContractView(session, token)
-            contract_view.update_contract(contract_id)
+            
+            # Vérifier qu'au moins une option est fournie
+            if amount is None and signed is None:
+                console.print(Panel.fit(
+                    "[bold yellow]Veuillez spécifier au moins une valeur à mettre à jour (montant ou statut).[/bold yellow]",
+                    border_style="yellow"
+                ))
+                return
+            
+            # Mise à jour du montant si nécessaire
+            if amount is not None:
+                contract = contract_view.controller.update_contract_amount(token, db, id, amount)
+                if contract:
+                    console.print(Panel.fit(
+                        f"[bold green]Montant du contrat {id} mis à jour avec succès: {amount}.[/bold green]",
+                        border_style="green"
+                    ))
+                else:
+                    console.print(Panel.fit(
+                        f"[bold red]Échec de la mise à jour du montant du contrat {id}.[/bold red]",
+                        border_style="red"
+                    ))
+            
+            # Mise à jour du statut si nécessaire
+            if signed is not None:
+                contract = contract_view.controller.update_contract_status(token, db, id, signed)
+                if contract:
+                    status_txt = "signé" if signed else "non signé"
+                    console.print(Panel.fit(
+                        f"[bold green]Statut du contrat {id} mis à jour avec succès: {status_txt}.[/bold green]",
+                        border_style="green"
+                    ))
+                else:
+                    console.print(Panel.fit(
+                        f"[bold red]Échec de la mise à jour du statut du contrat {id}.[/bold red]",
+                        border_style="red"
+                    ))
         
-        @contract.command("delete")
-        @click.argument("contract_id", type=int)
-        def delete_contract(contract_id):
-            """Supprime un contrat existant"""
-            session = get_session()
+        @contract.command("by-client")
+        @click.argument("client_id", type=int)
+        @click.pass_context
+        def contracts_by_client(ctx, client_id):
+            """Liste les contrats d'un client."""
+            db = get_session()
             token = get_token()
+            
             if not token:
-                click.echo("Erreur: Vous devez être connecté pour supprimer un contrat.")
+                console.print(Panel.fit(
+                    "[bold red]Veuillez vous connecter d'abord.[/bold red]",
+                    border_style="red"
+                ))
                 return
-            contract_view = ContractView(session, token)
-            contract_view.delete_contract(contract_id) 
+            
+            contracts = contract_view.controller.get_contracts_by_client(token, db, client_id)
+            
+            if not contracts:
+                console.print(Panel.fit(
+                    f"[bold yellow]Aucun contrat trouvé pour le client {client_id}.[/bold yellow]",
+                    border_style="yellow"
+                ))
+                return
+                
+            contract_view.display_items(contracts)
+        
+        @contract.command("my-contracts")
+        @click.pass_context
+        def my_contracts(ctx):
+            """Liste les contrats des clients dont je suis le commercial."""
+            db = get_session()
+            token = get_token()
+            
+            if not token:
+                console.print(Panel.fit(
+                    "[bold red]Veuillez vous connecter d'abord.[/bold red]",
+                    border_style="red"
+                ))
+                return
+            
+            contracts = contract_view.controller.get_contracts_by_commercial(token, db)
+            
+            if not contracts:
+                console.print(Panel.fit(
+                    "[bold yellow]Vous n'avez pas de contrats associés.[/bold yellow]",
+                    border_style="yellow"
+                ))
+                return
+                
+            contract_view.display_items(contracts)
+    
+    def display_items(self, contracts: List[Any]):
+        """
+        Affiche une liste de contrats sous forme de tableau avec Rich.
+        
+        Args:
+            contracts (List[Any]): La liste des contrats à afficher
+        """
+        table = Table(title="Liste des Contrats", show_header=True, header_style="bold cyan")
+        
+        # Définition des colonnes
+        table.add_column("ID", style="dim", justify="center")
+        table.add_column("Client", style="green")
+        table.add_column("Montant", justify="right", style="yellow")
+        table.add_column("Restant", justify="right", style="yellow")
+        table.add_column("Statut", justify="center")
+        table.add_column("Commercial", style="green")
+        
+        # Ajout des lignes
+        for contract in contracts:
+            client_name = contract.client.fullname if contract.client else "N/A"
+            commercial = contract.sales_contact.fullname if contract.sales_contact else "N/A"
+            
+            # Statut avec couleur spécifique
+            status = "[green]Signé[/green]" if contract.status else "[red]Non signé[/red]"
+            
+            table.add_row(
+                str(contract.id),
+                client_name,
+                f"{contract.amount} €",
+                f"{contract.remaining_amount} €",
+                status,
+                commercial
+            )
+        
+        # Affichage du tableau
+        console.print(table)
+    
+    def display_item(self, contract: Any):
+        """
+        Affiche un contrat détaillé avec Rich.
+        
+        Args:
+            contract (Any): Le contrat à afficher
+        """
+        try:
+            # Création d'un tableau pour les informations de base
+            contract_info = Table(show_header=False, box=None)
+            contract_info.add_column("Propriété", style="cyan")
+            contract_info.add_column("Valeur")
+            
+            # Ajout des informations de base du contrat
+            contract_info.add_row("ID", str(contract.id))
+            contract_info.add_row("Montant total", f"{contract.amount} €")
+            contract_info.add_row("Montant restant", f"{contract.remaining_amount} €")
+            
+            # Statut avec couleur spécifique
+            status_value = "[green]Signé[/green]" if contract.status else "[red]Non signé[/red]"
+            contract_info.add_row("Statut", status_value)
+            
+            if hasattr(contract, 'create_date') and contract.create_date:
+                date_formatted = contract.create_date.strftime("%Y-%m-%d %H:%M:%S")
+                contract_info.add_row("Date de création", date_formatted)
+                
+            if hasattr(contract, 'updated_date') and contract.updated_date:
+                date_formatted = contract.updated_date.strftime("%Y-%m-%d %H:%M:%S")
+                contract_info.add_row("Dernière mise à jour", date_formatted)
+            
+            # Obtenir les détails du client et du commercial
+            from epiceventsCRM.database import get_session
+            db = get_session()
+            
+            try:
+                # Récupérer les informations du client
+                from epiceventsCRM.models.models import Client, User
+                client = db.query(Client).filter(Client.id == contract.client_id).first()
+                if client:
+                    contract_info.add_row("Client ID", str(contract.client_id))
+                    contract_info.add_row("Client", f"[green]{client.fullname}[/green]")
+                
+                # Récupérer les informations du commercial
+                commercial = db.query(User).filter(User.id == contract.sales_contact_id).first()
+                if commercial:
+                    contract_info.add_row("Commercial ID", str(contract.sales_contact_id))
+                    contract_info.add_row("Commercial", f"[green]{commercial.fullname}[/green]")
+                
+            finally:
+                db.close()
+            
+            # Affichage des informations dans un panneau élégant
+            panel = Panel(
+                contract_info,
+                title=f"[bold yellow]Contrat #{contract.id}[/bold yellow]",
+                border_style="yellow"
+            )
+            console.print(panel)
+            
+        except Exception as e:
+            console.print(f"[bold red]Erreur lors de l'affichage du contrat:[/bold red] {str(e)}") 

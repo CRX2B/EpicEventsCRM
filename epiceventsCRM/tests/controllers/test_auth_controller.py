@@ -79,7 +79,7 @@ def test_auth_controller_permissions(db_session, test_department):
     assert auth_controller.check_permission(token, "read_event") is True
     assert auth_controller.check_permission(token, "update_event") is False
     assert auth_controller.check_permission(token, "delete_event") is False
-    assert auth_controller.check_permission(token, "read_user") is True
+    assert auth_controller.check_permission(token, "read_user") is False
 
 def test_invalid_login(db_session, test_department):
     """Test la tentative de login avec des identifiants invalides."""

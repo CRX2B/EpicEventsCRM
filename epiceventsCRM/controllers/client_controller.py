@@ -2,24 +2,75 @@ from typing import List, Optional, Dict
 from sqlalchemy.orm import Session
 from epiceventsCRM.dao.client_dao import ClientDAO
 from epiceventsCRM.models.models import Client
-from epiceventsCRM.controllers.auth_controller import AuthController
+from epiceventsCRM.controllers.base_controller import BaseController
+from epiceventsCRM.utils.permissions import require_permission
+from epiceventsCRM.utils.token_manager import decode_token
 
-class ClientController:
+class ClientController(BaseController[Client]):
     """
     Contrôleur pour la gestion des clients.
+    Accessible principalement au département commercial.
     """
     
-    def __init__(self, session: Session = None):
+    def __init__(self):
         """
-        Initialise le contrôleur avec une session DB optionnelle
+        Initialise le contrôleur des clients avec le DAO approprié.
+        """
+        super().__init__(ClientDAO(), "client")
+    
+    @require_permission("read_client")
+    def get_clients_by_commercial(self, token: str, db: Session) -> List[Client]:
+        """
+        Récupère tous les clients d'un commercial.
         
         Args:
-            session (Session, optional): Session SQLAlchemy active
+            token (str): Le token JWT
+            db (Session): La session de base de données
+            
+        Returns:
+            List[Client]: Liste des clients du commercial
         """
-        self.session = session
-        self.client_dao = ClientDAO(session)
-        self.auth_controller = AuthController()
+        # Récupérer l'ID de l'utilisateur depuis le token
+        payload = decode_token(token)
+        if not payload or "sub" not in payload:
+            return []
+        
+        user_id = payload["sub"]
+        return self.dao.get_by_sales_contact(db, user_id)
     
+    @require_permission("update_client")
+    def update_client_commercial(self, token: str, db: Session, client_id: int, commercial_id: int) -> Optional[Client]:
+        """
+        Met à jour le commercial d'un client.
+        
+        Args:
+            token (str): Le token JWT
+            db (Session): La session de base de données
+            client_id (int): L'ID du client
+            commercial_id (int): L'ID du nouveau commercial
+            
+        Returns:
+            Optional[Client]: Le client mis à jour si trouvé, None sinon
+        """
+        client = self.dao.get(db, client_id)
+        if not client:
+            return None
+        
+        # Vérifier si le commercial actuel est l'utilisateur qui fait la requête (pour les commerciaux)
+        payload = decode_token(token)
+        if not payload or "sub" not in payload or "department" not in payload:
+            return None
+        
+        user_id = payload["sub"]
+        department = payload["department"]
+        
+        # Si c'est un commercial, il ne peut modifier que ses propres clients
+        if department == "commercial" and client.commercial_contact_id != user_id:
+            return None
+        
+        # Mise à jour du commercial
+        return self.dao.update_commercial(db, client, commercial_id)
+
     def check_permission(self, token: str, permission: str) -> bool:
         """
         Vérifie si l'utilisateur a la permission spécifiée.
@@ -33,30 +84,35 @@ class ClientController:
         """
         return self.auth_controller.check_permission(token, permission)
     
-    def create_client(self, db: Session, token: str, client_data: Dict) -> Optional[Client]:
+    @require_permission("create_client")
+    def create(self, token: str, db: Session, client_data: Dict) -> Optional[Client]:
         """
-        Crée un nouveau client.
+        Crée un nouveau client en assignant automatiquement le commercial.
         
         Args:
-            db (Session): La session de base de données
             token (str): Le token JWT
+            db (Session): La session de base de données
             client_data (Dict): Les données du client
             
         Returns:
-            Optional[Client]: Le client créé si la permission est accordée, None sinon
+            Optional[Client]: Le client créé
         """
-        if not self.check_permission(token, "create_client"):
-            return None
-            
         # Récupération des informations de l'utilisateur depuis le token
-        user_info = self.auth_controller.verify_token(token)
-        if not user_info:
+        payload = decode_token(token)
+        
+        if not payload or "sub" not in payload:
+            print("Erreur: payload invalide ou 'sub' (user_id) manquant")
             return None
             
         # Attribution du commercial (l'utilisateur connecté) au client
-        client_data["sales_contact_id"] = user_info.get("sub")
+        client_data["sales_contact_id"] = payload["sub"]
             
-        return self.client_dao.create(db, client_data)
+        # Appeler la méthode create_client du DAO qui définit les dates automatiquement
+        try:
+            return self.dao.create_client(db, client_data)
+        except Exception as e:
+            print(f"Erreur lors de la création du client: {str(e)}")
+            return None
     
     def get_client(self, db: Session, token: str, client_id: int) -> Optional[Client]:
         """
@@ -74,7 +130,7 @@ class ClientController:
         if not self.check_permission(token, "read_client"):
             return None
             
-        return self.client_dao.get(db, client_id)
+        return self.dao.get(db, client_id)
     
     def get_all_clients(self, db: Session, token: str, skip: int = 0, limit: int = 100) -> List[Client]:
         """
@@ -93,7 +149,7 @@ class ClientController:
         if not self.check_permission(token, "read_client"):
             return []
             
-        return self.client_dao.get_all(db, skip=skip, limit=limit)
+        return self.dao.get_all(db, skip=skip, limit=limit)
     
     def get_my_clients(self, db: Session, token: str) -> List[Client]:
         """
@@ -112,11 +168,11 @@ class ClientController:
             
         # Récupération des informations de l'utilisateur depuis le token
         user_info = self.auth_controller.verify_token(token)
-        if not user_info:
+        if not user_info or "sub" not in user_info:
             return []
             
         # Récupération des clients gérés par l'utilisateur
-        return self.client_dao.get_by_sales_contact(db, user_info.get("sub"))
+        return self.dao.get_by_sales_contact(db, user_info["sub"])
     
     def update_client(self, db: Session, token: str, client_id: int, client_data: Dict) -> Optional[Client]:
         """
@@ -135,17 +191,17 @@ class ClientController:
             return None
             
         # Vérification que le client existe
-        client = self.client_dao.get(db, client_id)
+        client = self.dao.get(db, client_id)
         if not client:
             return None
             
         # Vérification que l'utilisateur est bien le commercial du client
         user_info = self.auth_controller.verify_token(token)
-        if not user_info or (client.sales_contact_id != user_info.get("sub") and 
+        if not user_info or "sub" not in user_info or (client.sales_contact_id != user_info["sub"] and 
                              user_info.get("department") != "gestion"):
             return None
             
-        return self.client_dao.update(db, client, client_data)
+        return self.dao.update_client(db, client_id, client_data)
     
     def delete_client(self, db: Session, token: str, client_id: int) -> bool:
         """
@@ -163,17 +219,17 @@ class ClientController:
             return False
             
         # Vérification que le client existe
-        client = self.client_dao.get(db, client_id)
+        client = self.dao.get(db, client_id)
         if not client:
             return False
             
         # Vérification que l'utilisateur est bien le commercial du client
         user_info = self.auth_controller.verify_token(token)
-        if not user_info or (client.sales_contact_id != user_info.get("sub") and 
+        if not user_info or "sub" not in user_info or (client.sales_contact_id != user_info["sub"] and 
                              user_info.get("department") != "gestion"):
             return False
             
-        return self.client_dao.delete(db, client_id)
+        return self.dao.delete(db, client_id)
         
     # Méthodes pour compatibilité avec la vue
     def list_clients(self, token: str) -> tuple:
