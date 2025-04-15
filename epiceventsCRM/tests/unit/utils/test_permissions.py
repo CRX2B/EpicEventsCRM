@@ -1,9 +1,13 @@
 import pytest
-from epiceventsCRM.models.models import Department as ModelDepartment
-from epiceventsCRM.utils.permissions import Department, get_department_permissions, has_permission, require_permission
-from unittest.mock import MagicMock, patch
-import pytest
-from functools import wraps
+
+from epiceventsCRM.utils.permissions import (
+    Department,
+    get_department_permissions,
+    has_permission,
+    require_permission,
+    PermissionError,
+)
+
 
 def test_department_permissions():
     """Test les permissions par département."""
@@ -55,13 +59,14 @@ def test_department_permissions():
     assert not has_permission(Department("gestion"), "create_event")
     assert has_permission(Department("gestion"), "read_event")
     assert has_permission(Department("gestion"), "update_event")
-    assert not has_permission(Department("gestion"), "delete_event")
-    
+    assert has_permission(Department("gestion"), "delete_event")
+
     # Test des permissions de gestion des utilisateurs
     assert has_permission(Department("gestion"), "create_user")
     assert has_permission(Department("gestion"), "read_user")
     assert has_permission(Department("gestion"), "update_user")
     assert has_permission(Department("gestion"), "delete_user")
+
 
 def test_get_department_permissions():
     """Test la récupération des permissions par département."""
@@ -110,11 +115,12 @@ def test_get_department_permissions():
     assert "create_event" not in gestion_perms
     assert "read_event" in gestion_perms
     assert "update_event" in gestion_perms
-    assert "delete_event" not in gestion_perms
+    assert "delete_event" in gestion_perms
     assert "create_user" in gestion_perms
     assert "read_user" in gestion_perms
     assert "update_user" in gestion_perms
     assert "delete_user" in gestion_perms
+
 
 def test_invalid_department():
     """Test avec un département invalide."""
@@ -137,69 +143,105 @@ def test_invalid_department():
     assert not has_permission("INVALID_DEPARTMENT", "update_user")
     assert not has_permission("INVALID_DEPARTMENT", "delete_user")
 
+
 # Nouveaux tests pour le décorateur require_permission
 class TestRequirePermission:
     """Tests pour le décorateur require_permission avec le nouveau format."""
-    
-    def test_require_permission_simple(self):
+
+    def test_require_permission_simple(self, monkeypatch):
         """Test du décorateur avec une permission simple."""
+
+        # Classe pour MockAuthController
+        class MockAuthController:
+            def __init__(self):
+                self.check_permission_calls = []
+                self.return_value = True
+
+            def check_permission(self, token, permission):
+                self.check_permission_calls.append((token, permission))
+                return self.return_value
+
         # Mock de controller et auth_controller
         class TestController:
             entity_name = "test"
-            
+
             def __init__(self):
-                self.auth_controller = MagicMock()
-                self.auth_controller.check_permission.return_value = True
-            
+                self.auth_controller = MockAuthController()
+
             @require_permission("read_test")
             def test_method(self, token, *args, **kwargs):
                 return "success"
-        
+
         controller = TestController()
         result = controller.test_method("fake_token")
-        
+
         # Vérifier que le décorateur a bien passé la bonne permission
-        controller.auth_controller.check_permission.assert_called_once_with("fake_token", "read_test")
+        assert controller.auth_controller.check_permission_calls == [("fake_token", "read_test")]
         assert result == "success"
-    
-    def test_require_permission_with_entity_name(self):
+
+    def test_require_permission_with_entity_name(self, monkeypatch):
         """Test du décorateur avec une permission incluant {entity_name}."""
+
+        # Classe pour MockAuthController
+        class MockAuthController:
+            def __init__(self):
+                self.check_permission_calls = []
+                self.return_value = True
+
+            def check_permission(self, token, permission):
+                self.check_permission_calls.append((token, permission))
+                return self.return_value
+
         # Mock de controller et auth_controller
         class TestController:
             entity_name = "test"
-            
+
             def __init__(self):
-                self.auth_controller = MagicMock()
-                self.auth_controller.check_permission.return_value = True
-            
+                self.auth_controller = MockAuthController()
+
             @require_permission("read_{entity_name}")
             def test_method(self, token, *args, **kwargs):
                 return "success"
-        
+
         controller = TestController()
         result = controller.test_method("fake_token")
-        
+
         # Vérifier que le décorateur a bien formaté la permission avec entity_name
-        controller.auth_controller.check_permission.assert_called_once_with("fake_token", "read_test")
+        assert controller.auth_controller.check_permission_calls == [("fake_token", "read_test")]
         assert result == "success"
-    
-    def test_require_permission_denied(self):
+
+    def test_require_permission_denied(self, monkeypatch):
         """Test du décorateur quand la permission est refusée."""
+
+        # Classe pour MockAuthController
+        class MockAuthController:
+            def __init__(self):
+                self.check_permission_calls = []
+                self.return_value = False
+
+            def check_permission(self, token, permission):
+                self.check_permission_calls.append((token, permission))
+                return self.return_value
+
+            def verify_token(self, token):
+                return {"sub": None, "department": None}
+
         # Mock de controller et auth_controller
         class TestController:
             entity_name = "test"
-            
+
             def __init__(self):
-                self.auth_controller = MagicMock()
-                self.auth_controller.check_permission.return_value = False
-            
+                self.auth_controller = MockAuthController()
+
             @require_permission("read_{entity_name}")
             def test_method(self, token, *args, **kwargs):
                 return "success"
-        
+
         controller = TestController()
-        result = controller.test_method("fake_token")
-        
-        # Vérifier que le décorateur bloque l'accès quand la permission est refusée
-        controller.auth_controller.check_permission.assert_called_once_with("fake_token", "read_test")
-        assert result is None 
+
+        # Vérifier que l'exception est levée
+        with pytest.raises(PermissionError):
+            controller.test_method("fake_token")
+
+        # Vérifier que l'appel à check_permission a été fait
+        assert controller.auth_controller.check_permission_calls == [("fake_token", "read_test")]

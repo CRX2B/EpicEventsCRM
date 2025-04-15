@@ -1,116 +1,192 @@
-from typing import List, Optional, Dict, TypeVar, Generic, Type
-from sqlalchemy.orm import Session
-from epiceventsCRM.dao.base_dao import BaseDAO
-from epiceventsCRM.controllers.auth_controller import AuthController
-from epiceventsCRM.utils.permissions import require_permission
+from typing import Dict, Generic, List, Optional, TypeVar, Tuple
 
-T = TypeVar('T')
+from sqlalchemy.orm import Session
+
+from epiceventsCRM.controllers.auth_controller import AuthController
+from epiceventsCRM.dao.base_dao import BaseDAO
+from epiceventsCRM.utils.permissions import PermissionError, require_permission
+from epiceventsCRM.utils.sentry_utils import capture_exception, capture_message
+
+T = TypeVar("T")
+
 
 class BaseController(Generic[T]):
     """
-    Contrôleur de base qui fournit des fonctionnalités CRUD génériques.
-    """
+    Contrôleur de base pour les opérations CRUD.
     
-    def __init__(self, dao: BaseDAO, entity_name: str):
+    Cette classe abstraite fournit les fonctionnalités de base pour la gestion des entités :
+    - Création
+    - Lecture
+    - Mise à jour
+    - Suppression
+    
+    Les classes dérivées doivent implémenter des méthodes spécifiques pour chaque entité.
+    """
+
+    def __init__(self, dao: BaseDAO[T], entity_name: str):
         """
-        Initialise le contrôleur avec un DAO et un nom d'entité.
-        
+        Initialise le contrôleur avec le DAO approprié.
+
         Args:
-            dao (BaseDAO): L'objet DAO pour accéder aux données
-            entity_name (str): Le nom de l'entité (utilisé pour construire les noms de permissions)
+            dao: DAO spécifique à l'entité
+            entity_name: Nom de l'entité gérée
         """
         self.dao = dao
         self.entity_name = entity_name
         self.auth_controller = AuthController()
-    
+
     @require_permission("read_{entity_name}")
+    @capture_exception
     def get(self, token: str, db: Session, entity_id: int) -> Optional[T]:
         """
         Récupère une entité par son ID.
-        
+
         Args:
-            token (str): Le token JWT
-            db (Session): La session de base de données
-            entity_id (int): L'ID de l'entité
-            
+            token: Token JWT de l'utilisateur
+            db: Session de base de données
+            entity_id: ID de l'entité à récupérer
+
         Returns:
-            Optional[T]: L'entité si trouvée, None sinon
+            L'entité si trouvée, None sinon
+
+        Raises:
+            PermissionError: Si l'utilisateur n'a pas la permission de lecture
         """
-        return self.dao.get(db, entity_id)
-    
+        try:
+            return self.dao.get(db, entity_id)
+        except PermissionError as e:
+            capture_message(
+                f"Erreur de permission lors de la lecture de {self.entity_name} {entity_id}",
+                level="warning",
+                extra={"error": str(e)},
+            )
+            raise
+
     @require_permission("read_{entity_name}")
-    def get_all(self, token: str, db: Session, skip: int = 0, limit: int = 100) -> List[T]:
+    @capture_exception
+    def get_all(
+        self, token: str, db: Session, page: int = 1, page_size: int = 10
+    ) -> Tuple[List[T], int]:
         """
-        Récupère toutes les entités.
-        
+        Récupère toutes les entités avec pagination basée sur les pages.
+
         Args:
-            token (str): Le token JWT
-            db (Session): La session de base de données
-            skip (int): Nombre d'entités à sauter
-            limit (int): Nombre maximum d'entités à retourner
-            
+            token: Token JWT de l'utilisateur
+            db: Session de base de données
+            page: Numéro de la page (commence à 1)
+            page_size: Nombre d'éléments par page
+
         Returns:
-            List[T]: Liste des entités
+            Tuple[List[T], int]: (Liste des entités, nombre total d'entités)
+
+        Raises:
+            PermissionError: Si l'utilisateur n'a pas la permission de lecture
         """
-        return self.dao.get_all(db, skip=skip, limit=limit)
-    
+        try:
+            return self.dao.get_all(db, page=page, page_size=page_size)
+        except PermissionError as e:
+            capture_message(
+                f"Erreur de permission lors de la lecture de tous les {self.entity_name}s",
+                level="warning",
+                extra={"error": str(e)},
+            )
+            raise
+
     @require_permission("create_{entity_name}")
+    @capture_exception
     def create(self, token: str, db: Session, data: Dict) -> Optional[T]:
         """
         Crée une nouvelle entité.
-        
+
         Args:
-            token (str): Le token JWT
-            db (Session): La session de base de données
-            data (Dict): Les données de l'entité
-            
+            token: Token JWT de l'utilisateur
+            db: Session de base de données
+            data: Données de l'entité à créer
+
         Returns:
-            Optional[T]: L'entité créée
+            L'entité créée si l'opération réussit, None sinon
+
+        Raises:
+            ValueError: Si des champs obligatoires sont manquants
+            PermissionError: Si l'utilisateur n'a pas la permission de création
         """
-        return self.dao.create(db, data)
-    
+        try:
+            return self.dao.create(db, data)
+        except PermissionError as e:
+            capture_message(
+                f"Erreur de permission lors de la création d'un {self.entity_name}",
+                level="warning",
+                extra={"error": str(e)},
+            )
+            raise
+
     @require_permission("update_{entity_name}")
+    @capture_exception
     def update(self, token: str, db: Session, entity_id: int, data: Dict) -> Optional[T]:
         """
         Met à jour une entité.
-        
+
         Args:
-            token (str): Le token JWT
-            db (Session): La session de base de données
-            entity_id (int): L'ID de l'entité
-            data (Dict): Les nouvelles données
-            
+            token: Token JWT de l'utilisateur
+            db: Session de base de données
+            entity_id: ID de l'entité à mettre à jour
+            data: Nouvelles données de l'entité
+
         Returns:
-            Optional[T]: L'entité mise à jour si trouvée, None sinon
+            L'entité mise à jour si l'opération réussit, None sinon
+
+        Raises:
+            PermissionError: Si l'utilisateur n'a pas la permission de mise à jour
         """
-        entity = self.dao.get(db, entity_id)
-        if not entity:
-            return None
-        return self.dao.update(db, entity, data)
-    
+        try:
+            entity = self.dao.get(db, entity_id)
+            if not entity:
+                return None
+            return self.dao.update(db, entity, data)
+        except PermissionError as e:
+            capture_message(
+                f"Erreur de permission lors de la mise à jour du {self.entity_name} {entity_id}",
+                level="warning",
+                extra={"error": str(e)},
+            )
+            raise
+
     @require_permission("delete_{entity_name}")
+    @capture_exception
     def delete(self, token: str, db: Session, entity_id: int) -> bool:
         """
         Supprime une entité.
-        
+
         Args:
-            token (str): Le token JWT
-            db (Session): La session de base de données
-            entity_id (int): L'ID de l'entité
-            
+            token: Token JWT de l'utilisateur
+            db: Session de base de données
+            entity_id: ID de l'entité à supprimer
+
         Returns:
-            bool: True si l'entité a été supprimée, False sinon
+            True si supprimée, False sinon
+
+        Raises:
+            PermissionError: Si l'utilisateur n'a pas la permission de suppression
         """
-        return self.dao.delete(db, entity_id)
-    
+        try:
+            return self.dao.delete(db, entity_id)
+        except PermissionError as e:
+            capture_message(
+                f"Erreur de permission lors de la suppression du {self.entity_name} {entity_id}",
+                level="warning",
+                extra={"error": str(e)},
+            )
+            raise
+
+    @capture_exception
     def format_permission(self, action: str) -> str:
         """
         Formate une permission en utilisant l'action et le nom de l'entité.
-        
+
         Args:
-            action (str): L'action (create, read, update, delete)
-            
+            action: L'action (create, read, update, delete)
+
         Returns:
-            str: La permission formatée
+            La permission formatée
         """
-        return f"{action}_{self.entity_name}" 
+        return f"{action}_{self.entity_name}"

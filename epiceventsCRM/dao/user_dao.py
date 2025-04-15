@@ -1,75 +1,66 @@
-from typing import Optional
-from sqlalchemy.orm import Session
+from typing import Optional, Dict
+
 from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from epiceventsCRM.dao.base_dao import BaseDAO
 from epiceventsCRM.models.models import User
 from epiceventsCRM.utils.auth import hash_password, verify_password
+
 
 class UserDAO(BaseDAO[User]):
     """
     DAO pour la gestion des utilisateurs.
     Hérite de BaseDAO et ajoute des méthodes spécifiques aux utilisateurs.
     """
-    
-    def __init__(self, session: Session = None):
+
+    def __init__(self):
         """
-        Initialise le DAO avec une session optionnelle
-        
-        Args:
-            session (Session, optional): La session de base de données
+        Initialise le DAO
         """
         super().__init__(User)
-        self.session = session
-    
+
     def get_by_email(self, db: Session, email: str) -> Optional[User]:
         """
         Récupère un utilisateur par son email.
-        
+
         Args:
             db (Session): La session de base de données
             email (str): L'email de l'utilisateur
-            
+
         Returns:
             Optional[User]: L'utilisateur si trouvé, None sinon
         """
         return db.scalar(select(User).where(User.email == email))
-    
-    def create(self, db: Session, obj_in: dict) -> User:
-        """
-        Crée un nouvel utilisateur.
-        
-        Args:
-            db (Session): La session de base de données
-            obj_in (dict): Les données de l'utilisateur
-            
-        Returns:
-            User: L'utilisateur créé
-        """
-        # Hashage du mot de passe
-        hashed_password = hash_password(obj_in["password"])
-        
-        # Création de l'utilisateur avec le mot de passe hashé
+
+    def get(self, db: Session, user_id: int) -> Optional[User]:
+        """Récupère un utilisateur par son ID"""
+        return db.query(User).filter(User.id == user_id).first()
+
+    def create(self, db: Session, user_data: Dict) -> User:
+        """Crée un nouvel utilisateur"""
+        # Hashage du mot de passe avant stockage
+        hashed_password = hash_password(user_data["password"])
         user = User(
-            fullname=obj_in["fullname"],
-            email=obj_in["email"],
+            fullname=user_data["fullname"],
+            email=user_data["email"],
             password=hashed_password,
-            departement_id=obj_in["departement_id"]
+            departement_id=user_data["departement_id"],
         )
-        
         db.add(user)
         db.commit()
         db.refresh(user)
         return user
-    
+
     def authenticate(self, db: Session, email: str, password: str) -> Optional[User]:
         """
         Authentifie un utilisateur par son email et mot de passe.
-        
+
         Args:
             db (Session): La session de base de données
             email (str): L'email de l'utilisateur
             password (str): Le mot de passe en clair
-            
+
         Returns:
             Optional[User]: L'utilisateur si authentifié, None sinon
         """
@@ -79,16 +70,16 @@ class UserDAO(BaseDAO[User]):
         if not verify_password(password, user.password):
             return None
         return user
-    
+
     def update_password(self, db: Session, user_id: int, new_password: str) -> Optional[User]:
         """
         Met à jour le mot de passe d'un utilisateur.
-        
+
         Args:
             db (Session): La session de base de données
             user_id (int): L'ID de l'utilisateur
             new_password (str): Le nouveau mot de passe en clair
-            
+
         Returns:
             Optional[User]: L'utilisateur mis à jour si trouvé, None sinon
         """
@@ -112,18 +103,16 @@ class UserDAO(BaseDAO[User]):
             bool: True si le mot de passe correspond, False sinon
         """
         return verify_password(password, user.password)
-        
-    # Ajout de méthodes pour compatibilité avec le controller
-    def get_user_by_id(self, user_id: int) -> Optional[User]:
+
+    def get_user_by_id(self, db: Session, user_id: int) -> Optional[User]:
         """
-        Récupère un utilisateur par son ID en utilisant la session stockée
-        
+        Récupère un utilisateur par son ID en utilisant la session fournie
+
         Args:
+            db (Session): La session de base de données
             user_id (int): L'ID de l'utilisateur
-            
+
         Returns:
             Optional[User]: L'utilisateur si trouvé, None sinon
         """
-        if not self.session:
-            raise ValueError("Session not provided")
-        return self.get(self.session, user_id) 
+        return self.get(db, user_id)

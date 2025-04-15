@@ -4,22 +4,47 @@
 
 ### Lister les Utilisateurs
 ```bash
-python -m epiceventsCRM.main user list-users
+.\ecrm.bat user list-users
 ```
-**Description** : Affiche la liste de tous les utilisateurs
+**Description** : Affiche la liste de tous les utilisateurs avec pagination
 **Options** :
 - `--page` : Numéro de page à afficher (défaut: 1)
 - `--page-size` : Nombre d'utilisateurs par page (défaut: 10)
 **Permissions** : Département gestion uniquement
+**Pagination** : 
+- Les résultats sont paginés par défaut (10 éléments par page)
+- Le nombre total d'utilisateurs est affiché
+- Navigation possible entre les pages avec l'option --page
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main user list-users --page 2 --page-size 5
+# Afficher la première page avec 10 utilisateurs par page (par défaut)
+.\ecrm.bat user list-users
+
+# Afficher la deuxième page avec 5 utilisateurs par page
+.\ecrm.bat user list-users --page 2 --page-size 5
+```
+
+### Créer un Utilisateur
+```bash
+.\ecrm.bat user create
+```
+**Description** : Création d'un nouvel utilisateur
+**Options** :
+- `--fullname` ou `-f` : Nom complet de l'utilisateur (requis)
+- `--email` ou `-e` : Adresse email de l'utilisateur (requis)
+- `--password` ou `-p` : Mot de passe de l'utilisateur (requis)
+- `--department` ou `-d` : ID du département (requis) : 1=commercial, 2=support, 3=gestion
+**Permissions** : Département gestion uniquement
+
+**Exemple** :
+```bash
+.\ecrm.bat user create --fullname "Jean Dupont" --email jean@epicevents.com --password "MotDePasseSecurise" --department 1
 ```
 
 ### Afficher un Utilisateur
 ```bash
-python -m epiceventsCRM.main user get-user ID
+.\ecrm.bat user get ID
 ```
 **Description** : Affiche les détails d'un utilisateur spécifique
 **Arguments** :
@@ -28,12 +53,12 @@ python -m epiceventsCRM.main user get-user ID
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main user get-user 42
+.\ecrm.bat user get 42
 ```
 
 ### Mettre à jour un Utilisateur
 ```bash
-python -m epiceventsCRM.main user update ID
+.\ecrm.bat user update ID
 ```
 **Description** : Met à jour les informations d'un utilisateur
 **Arguments** :
@@ -46,12 +71,12 @@ python -m epiceventsCRM.main user update ID
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main user update 42 --email new.email@example.com --fullname "Jane Smith"
+.\ecrm.bat user update 42 --email new.email@example.com --fullname "Jane Smith"
 ```
 
 ### Supprimer un Utilisateur
 ```bash
-python -m epiceventsCRM.main user delete-user ID
+.\ecrm.bat user delete-user ID
 ```
 **Description** : Supprime un utilisateur
 **Arguments** :
@@ -62,12 +87,12 @@ python -m epiceventsCRM.main user delete-user ID
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main user delete-user 42 --confirm
+.\ecrm.bat user delete-user 42 --confirm
 ```
 
 ### Trouver un Utilisateur
 ```bash
-python -m epiceventsCRM.main user find
+.\ecrm.bat user find
 ```
 **Description** : Recherche un utilisateur par son adresse email
 **Options** :
@@ -76,14 +101,14 @@ python -m epiceventsCRM.main user find
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main user find --email john@example.com
+.\ecrm.bat user find --email john@example.com
 ```
 
 ## Gestion des Clients
 
 ### Créer un Client
 ```bash
-python -m epiceventsCRM.main client create
+.\ecrm.bat client create
 ```
 **Description** : Création d'un nouveau client
 **Options** :
@@ -95,27 +120,35 @@ python -m epiceventsCRM.main client create
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main client create --fullname "Jane Smith" --email jane@company.com --phone_number "0123456789" --enterprise "ACME Corp"
+.\ecrm.bat client create --fullname "Jane Smith" --email jane@company.com --phone_number "0123456789" --enterprise "ACME Corp"
 ```
 
 ### Lister les Clients
 ```bash
-python -m epiceventsCRM.main client list-clients
+.\ecrm.bat client list-clients
 ```
-**Description** : Affiche la liste de tous les clients
+**Description** : Affiche la liste de tous les clients avec pagination
 **Options** :
 - `--page` : Numéro de page à afficher (défaut: 1)
 - `--page-size` : Nombre de clients par page (défaut: 10)
 **Permissions** : Tous les départements
+**Pagination** : 
+- Les résultats sont paginés par défaut (10 éléments par page)
+- Le nombre total de clients est affiché
+- Navigation possible entre les pages avec l'option --page
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main client list-clients --page 2 --page-size 5
+# Afficher la première page avec 10 clients par page (par défaut)
+.\ecrm.bat client list-clients
+
+# Afficher la deuxième page avec 5 clients par page
+.\ecrm.bat client list-clients --page 2 --page-size 5
 ```
 
 ### Afficher un Client
 ```bash
-python -m epiceventsCRM.main client get-client ID
+.\ecrm.bat client get-client ID
 ```
 **Description** : Affiche les détails d'un client spécifique
 **Arguments** :
@@ -124,12 +157,12 @@ python -m epiceventsCRM.main client get-client ID
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main client get-client 42
+.\ecrm.bat client get-client 42
 ```
 
 ### Mettre à jour un Client
 ```bash
-python -m epiceventsCRM.main client update ID
+.\ecrm.bat client update ID
 ```
 **Description** : Met à jour les informations d'un client
 **Arguments** :
@@ -143,12 +176,12 @@ python -m epiceventsCRM.main client update ID
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main client update 42 --email new.email@company.com --phone_number "9876543210"
+.\ecrm.bat client update 42 --email new.email@company.com --phone_number "9876543210"
 ```
 
 ### Supprimer un Client
 ```bash
-python -m epiceventsCRM.main client delete-client ID
+.\ecrm.bat client delete-client ID
 ```
 **Description** : Supprime un client
 **Arguments** :
@@ -159,12 +192,12 @@ python -m epiceventsCRM.main client delete-client ID
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main client delete-client 42 --confirm
+.\ecrm.bat client delete-client 42 --confirm
 ```
 
 ### Mes Clients
 ```bash
-python -m epiceventsCRM.main client my-clients
+.\ecrm.bat client my-clients
 ```
 **Description** : Affiche la liste des clients assignés au commercial connecté
 **Options** : Aucune
@@ -172,14 +205,14 @@ python -m epiceventsCRM.main client my-clients
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main client my-clients
+.\ecrm.bat client my-clients
 ```
 
 ## Gestion des Contrats
 
 ### Créer un Contrat
 ```bash
-python -m epiceventsCRM.main contract create
+.\ecrm.bat contract create
 ```
 **Description** : Création d'un nouveau contrat
 **Options** :
@@ -190,7 +223,7 @@ python -m epiceventsCRM.main contract create
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main contract create --client 1 --amount 10000 --signed
+.\ecrm.bat contract create --client 1 --amount 10000 --signed
 ```
 
 **Notes** :
@@ -200,22 +233,30 @@ python -m epiceventsCRM.main contract create --client 1 --amount 10000 --signed
 
 ### Lister les Contrats
 ```bash
-python -m epiceventsCRM.main contract list-contracts
+.\ecrm.bat contract list-contracts
 ```
-**Description** : Affiche la liste de tous les contrats
+**Description** : Affiche la liste de tous les contrats avec pagination
 **Options** :
 - `--page` : Numéro de page à afficher (défaut: 1)
 - `--page-size` : Nombre de contrats par page (défaut: 10)
 **Permissions** : Tous les départements
+**Pagination** : 
+- Les résultats sont paginés par défaut (10 éléments par page)
+- Le nombre total de contrats est affiché
+- Navigation possible entre les pages avec l'option --page
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main contract list-contracts --page 2 --page-size 5
+# Afficher la première page avec 10 contrats par page (par défaut)
+.\ecrm.bat contract list-contracts
+
+# Afficher la deuxième page avec 5 contrats par page
+.\ecrm.bat contract list-contracts --page 2 --page-size 5
 ```
 
 ### Afficher un Contrat
 ```bash
-python -m epiceventsCRM.main contract get-contract ID
+.\ecrm.bat contract get-contract ID
 ```
 **Description** : Affiche les détails d'un contrat spécifique
 **Arguments** :
@@ -224,29 +265,37 @@ python -m epiceventsCRM.main contract get-contract ID
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main contract get-contract 42
+.\ecrm.bat contract get-contract 42
 ```
 
 ### Mettre à jour un Contrat
 ```bash
-python -m epiceventsCRM.main contract update ID
+.\ecrm.bat contract update ID
 ```
 **Description** : Met à jour les informations d'un contrat
 **Arguments** :
 - `ID` : L'identifiant du contrat à mettre à jour
 **Options** :
 - `--amount` ou `-a` : Nouveau montant du contrat
+- `--remaining-amount` ou `-r` : Nouveau montant restant du contrat
 - `--signed/--unsigned` : Marque le contrat comme signé ou non signé
 **Permissions** : Département gestion et département commercial (seulement pour les contrats de ses clients)
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main contract update 42 --amount 5000 --signed
+# Mettre à jour le montant et le statut
+.\ecrm.bat contract update 42 --amount 5000 --signed
+
+# Mettre à jour uniquement le montant restant
+.\ecrm.bat contract update 42 --remaining-amount 3000
+
+# Mettre à jour plusieurs champs
+.\ecrm.bat contract update 42 --amount 5000 --remaining-amount 3000 --signed
 ```
 
 ### Supprimer un Contrat
 ```bash
-python -m epiceventsCRM.main contract delete-contract ID
+.\ecrm.bat contract delete-contract ID
 ```
 **Description** : Supprime un contrat
 **Arguments** :
@@ -257,12 +306,12 @@ python -m epiceventsCRM.main contract delete-contract ID
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main contract delete-contract 42 --confirm
+.\ecrm.bat contract delete-contract 42 --confirm
 ```
 
 ### Contrats Non Signés
 ```bash
-python -m epiceventsCRM.main contract non-signes
+.\ecrm.bat contract non-signes
 ```
 **Description** : Affiche la liste des contrats non signés
 **Options** : Aucune
@@ -270,12 +319,12 @@ python -m epiceventsCRM.main contract non-signes
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main contract non-signes
+.\ecrm.bat contract non-signes
 ```
 
 ### Mes Contrats
 ```bash
-python -m epiceventsCRM.main contract my-contracts
+.\ecrm.bat contract my-contracts
 ```
 **Description** : Affiche la liste des contrats des clients dont je suis le commercial
 **Options** : Aucune
@@ -283,14 +332,14 @@ python -m epiceventsCRM.main contract my-contracts
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main contract my-contracts
+.\ecrm.bat contract my-contracts
 ```
 
 ## Gestion des Événements
 
 ### Créer un Événement
 ```bash
-python -m epiceventsCRM.main event create
+.\ecrm.bat event create
 ```
 **Description** : Création d'un nouvel événement
 **Options** :
@@ -305,27 +354,35 @@ python -m epiceventsCRM.main event create
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main event create --contract 1 --name "Conférence 2024" --start-date "2024-06-01 09:00" --end-date "2024-06-02 18:00" --location "Paris" --attendees 100
+.\ecrm.bat event create --contract 1 --name "Conférence 2024" --start-date "2024-06-01 09:00" --end-date "2024-06-02 18:00" --location "Paris" --attendees 100
 ```
 
 ### Lister les Événements
 ```bash
-python -m epiceventsCRM.main event list-events
+.\ecrm.bat event list-events
 ```
-**Description** : Affiche la liste de tous les événements
+**Description** : Affiche la liste de tous les événements avec pagination
 **Options** :
 - `--page` : Numéro de page à afficher (défaut: 1)
 - `--page-size` : Nombre d'événements par page (défaut: 10)
 **Permissions** : Tous les départements
+**Pagination** : 
+- Les résultats sont paginés par défaut (10 éléments par page)
+- Le nombre total d'événements est affiché
+- Navigation possible entre les pages avec l'option --page
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main event list-events --page 2 --page-size 5
+# Afficher la première page avec 10 événements par page (par défaut)
+.\ecrm.bat event list-events
+
+# Afficher la deuxième page avec 5 événements par page
+.\ecrm.bat event list-events --page 2 --page-size 5
 ```
 
 ### Afficher un Événement
 ```bash
-python -m epiceventsCRM.main event get-event ID
+.\ecrm.bat event get-event ID
 ```
 **Description** : Affiche les détails d'un événement spécifique
 **Arguments** :
@@ -334,12 +391,12 @@ python -m epiceventsCRM.main event get-event ID
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main event get-event 42
+.\ecrm.bat event get-event 42
 ```
 
 ### Mettre à jour un Événement
 ```bash
-python -m epiceventsCRM.main event update ID
+.\ecrm.bat event update ID
 ```
 **Description** : Met à jour les informations d'un événement
 **Arguments** :
@@ -355,12 +412,12 @@ python -m epiceventsCRM.main event update ID
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main event update 42 --location "Lyon" --notes "Changement de lieu"
+.\ecrm.bat event update 42 --location "Lyon" --notes "Changement de lieu"
 ```
 
 ### Mettre à jour les Notes d'un Événement
 ```bash
-python -m epiceventsCRM.main event update-notes ID NOTES
+.\ecrm.bat event update-notes ID NOTES
 ```
 **Description** : Met à jour les notes d'un événement (pour le support)
 **Arguments** :
@@ -370,12 +427,12 @@ python -m epiceventsCRM.main event update-notes ID NOTES
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main event update-notes 42 "Prévoir 20 places de parking supplémentaires"
+.\ecrm.bat event update-notes 42 "Prévoir 20 places de parking supplémentaires"
 ```
 
 ### Assigner un Support
 ```bash
-python -m epiceventsCRM.main event assign-support ID SUPPORT_ID
+.\ecrm.bat event assign-support ID SUPPORT_ID
 ```
 **Description** : Assigne un contact support à un événement
 **Arguments** :
@@ -385,12 +442,12 @@ python -m epiceventsCRM.main event assign-support ID SUPPORT_ID
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main event assign-support 42 3
+.\ecrm.bat event assign-support 42 3
 ```
 
 ### Supprimer un Événement
 ```bash
-python -m epiceventsCRM.main event delete-event ID
+.\ecrm.bat event delete-event ID
 ```
 **Description** : Supprime un événement
 **Arguments** :
@@ -401,12 +458,12 @@ python -m epiceventsCRM.main event delete-event ID
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main event delete-event 42 --confirm
+.\ecrm.bat event delete-event 42 --confirm
 ```
 
 ### Mes Événements
 ```bash
-python -m epiceventsCRM.main event my-events
+.\ecrm.bat event my-events
 ```
 **Description** : Affiche la liste des événements assignés à l'utilisateur connecté (support)
 **Options** : Aucune
@@ -414,12 +471,12 @@ python -m epiceventsCRM.main event my-events
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main event my-events
+.\ecrm.bat event my-events
 ```
 
 ### Événements Sans Support
 ```bash
-python -m epiceventsCRM.main event without-support
+.\ecrm.bat event without-support
 ```
 **Description** : Affiche la liste des événements sans contact support assigné
 **Options** : Aucune
@@ -427,12 +484,12 @@ python -m epiceventsCRM.main event without-support
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main event without-support
+.\ecrm.bat event without-support
 ```
 
 ### Événements par Contrat
 ```bash
-python -m epiceventsCRM.main event by-contract CONTRACT_ID
+.\ecrm.bat event by-contract CONTRACT_ID
 ```
 **Description** : Liste les événements d'un contrat spécifique
 **Arguments** :
@@ -441,33 +498,33 @@ python -m epiceventsCRM.main event by-contract CONTRACT_ID
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main event by-contract 42
+.\ecrm.bat event by-contract 42
 ```
 
 ## Authentification
 
 ### Connexion
 ```bash
-python -m epiceventsCRM.main auth login
+.\ecrm.bat auth login
 ```
 **Description** : Se connecter à l'application
 **Options** : Aucune (demande interactive de l'email et du mot de passe)
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main auth login
+.\ecrm.bat auth login
 ```
 
 ### Déconnexion
 ```bash
-python -m epiceventsCRM.main auth logout
+.\ecrm.bat auth logout
 ```
 **Description** : Se déconnecter de l'application
 **Options** : Aucune
 
 **Exemple** :
 ```bash
-python -m epiceventsCRM.main auth logout
+.\ecrm.bat auth logout
 ```
 
 ## Options Globales

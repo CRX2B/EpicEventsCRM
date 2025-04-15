@@ -4,3 +4,6 @@ env/
 *.pytest_cache/
 .token
 .coverage
+.flake8
+pyproject.toml
+.coveragerc

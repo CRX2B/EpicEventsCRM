@@ -1,138 +1,84 @@
 # Epic Events CRM
 
 ## Description
-Epic Events CRM est une application de gestion de la relation client (CRM) développée en Python. Elle permet de gérer les clients, les contrats et les événements d'Epic Events, avec un système de permissions basé sur les départements.
+Epic Events CRM est une application en ligne de commande (CLI) développée pour Epic Events, une entreprise spécialisée dans l'organisation d'événements. Elle permet aux différents départements (commercial, support, gestion) de gérer les clients, contrats et événements avec un système de permissions différenciées.
 
-## Structure du Projet
+## Schéma de la base de données
+![Schéma UML de la base de données](Classe%20UML.png)
+
+## Architecture du projet
+L'application est structurée selon le pattern MVC (Modèle-Vue-Contrôleur) avec une couche d'accès aux données (DAO):
+
 ```
 epiceventsCRM/
-├── controllers/     # Contrôleurs de l'application
-├── dao/            # Couche d'accès aux données
-├── models/         # Modèles de données
-├── utils/          # Utilitaires (authentification, permissions)
-├── views/          # Vues CLI
-└── tests/          # Tests unitaires et fonctionnels
+├── models/         # Modèles de données (SQLAlchemy ORM)
+├── dao/            # Data Access Objects - Accès à la base de données
+├── controllers/    # Logique métier et règles d'accès
+├── views/          # Interface CLI (Click)
+├── utils/          # Utilitaires (authentification, permissions, journalisation)
+└── tests/          # Tests unitaires et d'intégration
 ```
 
-## Fonctionnalités
+## Fonctionnalités principales
 
-### Authentification
-- Système de connexion sécurisé avec JWT (JSON Web Tokens)
-- Gestion des sessions utilisateurs
-- Protection des routes avec système de permissions
+- **Authentification par JWT** avec système de permissions par département
+- **Gestion des utilisateurs** (création, modification, suppression)
+- **Gestion des clients** avec attribution aux commerciaux
+- **Gestion des contrats** liés aux clients
+- **Gestion des événements** avec attribution de support
 
-### Gestion des Utilisateurs
-- Création, modification et suppression des utilisateurs
-- Attribution des départements
-- Gestion des permissions par département
+## Installation et déploiement
 
-### Gestion des Clients
-- Création de nouveaux clients
-- Modification des informations client
-- Suppression de clients
-- Consultation des clients
+### Prérequis
+- Python 3.9 ou supérieur
+- PostgreSQL
 
-### Gestion des Contrats
-- Création de contrats
-- Modification des contrats
-- Suppression de contrats
-- Consultation des contrats
+### Étapes d'installation
 
-### Gestion des Événements
-- Création d'événements
-- Modification des événements
-- Attribution des supports
-- Consultation des événements
+1. **Cloner le dépôt Git**
+   ```bash
+   git clone <URL_DU_REPO>
+   cd Epic-Events-CRM
+   ```
 
-## Permissions par Département
+2. **Créer un environnement virtuel**
+   ```bash
+   python -m venv env
+   # Activation sous Windows
+   env\Scripts\activate
+   # Activation sous Linux/Mac
+   source env/bin/activate
+   ```
 
-### Département Commercial
-- Gestion complète des clients (CRUD)
-- Création d'événements
-- Mise à jour des contrats de ses clients
-- Lecture des clients, contrats et événements
+3. **Installer les dépendances**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### Département Support
-- Mise à jour des événements dont ils sont responsables
-- Lecture des clients, contrats et événements
+4. **Configurer les variables d'environnement**
+   - Copier le fichier d'exemple:
+     ```bash
+     cp .env.example .env
+     ```
+   - Modifier les valeurs dans `.env`:
+     - Informations de connexion PostgreSQL (DB_NAME, DB_USER, etc.)
+     - Clé secrète JWT et algorithme
+     - Identifiants administrateur initial
+     - DSN Sentry (pour la journalisation)
 
-### Département Gestion
-- Gestion complète des utilisateurs (CRUD)
-- Gestion complète des contrats (CRUD)
-- Attribution des supports aux événements
-- Lecture des clients, contrats et événements
+5. **Initialiser la base de données**
+   ```bash
+   python -m epiceventsCRM.init_db
+   ```
+   Cette commande crée:
+   - La structure des tables
+   - Les départements (commercial, support, gestion)
+   - Un utilisateur administrateur initial
 
-## Installation
+### Utilisation rapide
 
-1. Cloner le repository :
-```bash
-git clone [URL_DU_REPO]
-cd epiceventsCRM
-```
+Pour faciliter l'utilisation, un script `ecrm.bat` est disponible:
 
-2. Créer un environnement virtuel :
-```bash
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate     # Windows
-```
-
-3. Installer les dépendances :
-```bash
-pip install -r requirements.txt
-```
-
-4. Configurer la base de données et les variables d'environnement :
-- Créer un fichier `.env` à partir du modèle `.env.example` :
-```bash
-cp .env.example .env
-```
-- Modifier les valeurs dans le fichier `.env` avec vos propres informations :
-  - `DB_NAME`, `DB_USER`, `DB_PASSWORD`, etc. : informations de connexion à la base de données
-  - `JWT_SECRET` : clé secrète pour la génération des tokens JWT
-  - `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_FULLNAME` : identifiants de l'administrateur par défaut
-
-5. Initialiser la base de données :
-```bash
-python -m epiceventsCRM.init_db
-```
-
-## Utilisation
-
-### Démarrage de l'application
-```bash
-python -m epiceventsCRM.main
-```
-
-### Commandes CLI disponibles
-- `login` : Connexion à l'application
-- `logout` : Déconnexion
-- `create-user` : Création d'un utilisateur (gestion uniquement)
-- `list-users` : Liste des utilisateurs (gestion uniquement)
-- `create-client` : Création d'un client (commercial uniquement)
-- `list-clients` : Liste des clients
-- `create-contract` : Création d'un contrat (gestion uniquement)
-- `list-contracts` : Liste des contrats
-- `create-event` : Création d'un événement (commercial uniquement)
-- `list-events` : Liste des événements
-
-## Utilisation simplifiée des commandes
-
-Pour simplifier l'utilisation des commandes, un script batch `ecrm.bat` est fourni à la racine du projet. Ce script vous permet d'éviter de taper `python -m epiceventsCRM.main` à chaque fois.
-
-### Utilisation sous Windows
-
-Au lieu de :
-```bash
-python -m epiceventsCRM.main event create --contract 1 --name "Conférence" --start-date "2024-06-01 09:00" --end-date "2024-06-01 18:00" --location "Paris" --attendees 100
-```
-
-Vous pouvez simplement utiliser :
-```bash
-.\ecrm.bat event create --contract 1 --name "Conférence" --start-date "2024-06-01 09:00" --end-date "2024-06-01 18:00" --location "Paris" --attendees 100
-```
-
-Quelques exemples :
 ```bash
 # Afficher l'aide
 .\ecrm.bat --help
@@ -140,49 +86,40 @@ Quelques exemples :
 # Se connecter
 .\ecrm.bat auth login
 
-# Lister les événements
-.\ecrm.bat event list-events
+# Lister les clients
+.\ecrm.bat client list-clients
 ```
 
-### Conseils pour PowerShell
+Pour la liste complète des commandes, consultez le fichier `COMMANDS.md`.
 
-Si vous utilisez PowerShell régulièrement, vous pouvez également créer un alias pour éviter de taper `.\ecrm.bat` :
+## Sécurité et bonnes pratiques
 
-```powershell
-Set-Alias -Name ecrm -Value ".\ecrm.bat"
-```
-
-Ensuite, vous pouvez simplement utiliser :
-```powershell
-ecrm event create --contract 1 --name "Conférence" ...
-```
-
-Notez que cet alias ne persiste que pour la session PowerShell en cours. Pour le rendre permanent, vous devrez l'ajouter à votre profil PowerShell.
+- **Authentification**: Tokens JWT avec expiration
+- **Stockage des mots de passe**: Hachage bcrypt avec salage
+- **Contrôle d'accès**: Système de permissions par département
+- **Protection contre les injections SQL**: Utilisation de l'ORM SQLAlchemy
+- **Journalisation**: Capture des exceptions avec Sentry
+- **Validation des données**: Vérification et nettoyage des entrées utilisateur
 
 ## Tests
-Pour exécuter les tests :
+
+Des tests automatisés couvrent la logique métier et les fonctionnalités critiques:
+
 ```bash
-python -m pytest
+# Exécuter tous les tests
+pytest
+
+# Exécuter avec rapport de couverture
+pytest --cov=epiceventsCRM --cov-report=html
 ```
 
-Les tests couvrent :
-- Tests d'authentification
-- Tests de permissions
-- Tests des contrôleurs
-- Tests des vues CLI
+## Spécificités techniques
 
-## Sécurité
-- Authentification par JWT
-- Hachage des mots de passe
-- Système de permissions par département
-- Protection des routes sensibles
-
-## Contribution
-1. Fork le projet
-2. Créer une branche pour votre fonctionnalité
-3. Commiter vos changements
-4. Pousser vers la branche
-5. Ouvrir une Pull Request
+- **ORM**: SQLAlchemy pour la manipulation de la base de données
+- **CLI**: Click pour l'interface en ligne de commande
+- **Authentification**: PyJWT pour la gestion des tokens
+- **Affichage**: Rich pour une interface utilisateur améliorée
+- **Journalisation**: Sentry pour le suivi des erreurs
 
 ## Licence
-Ce projet est sous licence MIT.
+Ce projet est développé dans le cadre d'un projet de formation.
