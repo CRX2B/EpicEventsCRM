@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from epiceventsCRM.controllers.base_controller import BaseController
 from epiceventsCRM.dao.user_dao import UserDAO
@@ -12,7 +13,7 @@ from epiceventsCRM.utils.sentry_utils import capture_exception, capture_message
 class UserController(BaseController[User]):
     """
     Contrôleur pour la gestion des utilisateurs.
-    
+
     Gère les opérations CRUD sur les utilisateurs avec des permissions spécifiques :
     - Les utilisateurs peuvent voir et modifier leurs propres informations
     - Le département gestion a un accès complet
@@ -102,6 +103,7 @@ class UserController(BaseController[User]):
         Raises:
             PermissionError: Si l'utilisateur n'a pas la permission de mise à jour
         """
+
         user = super().update(token, db, user_id, user_data)
         if user:
             # Journalisation Sentry de la modification d'un collaborateur
@@ -132,6 +134,11 @@ class UserController(BaseController[User]):
         Raises:
             PermissionError: Si l'utilisateur n'a pas la permission de suppression
         """
+
+        user = self.dao.get(db, user_id)
+        if not user:
+            return False  # Utilisateur non trouvé
+        # Si l'utilisateur existe, le supprimer
         return self.dao.delete(db, user_id)
 
     @require_permission("read_user")
@@ -154,11 +161,11 @@ class UserController(BaseController[User]):
         return [user for user in users if user.departement_id == department_id]
 
     @require_permission("update_user")
-    def update_user_department(
+    def update_user_department_via_update(
         self, token: str, db: Session, user_id: int, department_id: int
     ) -> Optional[User]:
         """
-        Met à jour le département d'un utilisateur.
+        Met à jour le département d'un utilisateur en utilisant la méthode update standard.
 
         Args:
             token: Token JWT de l'utilisateur
@@ -172,7 +179,8 @@ class UserController(BaseController[User]):
         Raises:
             PermissionError: Si l'utilisateur n'a pas la permission de mise à jour
         """
-        user = self.dao.update_department(db, user_id, department_id)
+
+        user = self.update(token, db, user_id, {"departement_id": department_id})
         if user:
             # Journalisation Sentry de la modification du département
             capture_message(
@@ -181,20 +189,6 @@ class UserController(BaseController[User]):
                 extra={"user_id": user.id, "email": user.email, "department_id": department_id},
             )
         return user
-
-    def authenticate(self, db: Session, email: str, password: str) -> Optional[User]:
-        """
-        Authentifie un utilisateur avec son email et son mot de passe.
-
-        Args:
-            db: Session de base de données
-            email: Email de l'utilisateur
-            password: Mot de passe de l'utilisateur
-
-        Returns:
-            L'utilisateur authentifié si les identifiants sont valides, None sinon
-        """
-        return self.dao.authenticate(db, email, password)
 
     @require_permission("read_user")
     def get_by_email(self, token: str, db: Session, email: str) -> Optional[User]:
@@ -232,11 +226,28 @@ class UserController(BaseController[User]):
             L'utilisateur créé si l'opération réussit, None sinon
 
         Raises:
-            ValueError: Si des champs obligatoires sont manquants
+            ValueError: Si le département ID est invalide ou si des champs sont manquants
             PermissionError: Si l'utilisateur n'a pas la permission de création
         """
+
         user_data["departement_id"] = department_id
-        return self.create(token, db, user_data)
+
+        try:
+            user = self.dao.create(db, user_data)
+        except IntegrityError:
+            db.rollback()
+            raise ValueError(
+                f"Département ID {department_id} invalide ou une autre contrainte violée."
+            )
+
+        if user:
+            # Journalisation Sentry de la création d'un collaborateur
+            capture_message(
+                f"Création d'un collaborateur: {user.email}",
+                level="info",
+                extra={"user_id": user.id, "email": user.email},
+            )
+        return user
 
     @require_permission("update_user")
     @capture_exception

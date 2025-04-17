@@ -8,6 +8,7 @@ from rich.table import Table
 from sqlalchemy.orm import Session
 
 from epiceventsCRM.controllers.base_controller import BaseController
+from epiceventsCRM.utils.permissions import PermissionError
 
 # Création d'une console Rich pour l'affichage
 console = Console()
@@ -95,39 +96,59 @@ class BaseView:
                     return
 
                 # Récupération des éléments avec pagination
-                items, total = self.controller.get_all(token, db, page=page, page_size=page_size)
+                try:
+                    items, total = self.controller.get_all(
+                        token, db, page=page, page_size=page_size
+                    )
 
-                if not items:
+                    if not items:
+                        console.print(
+                            Panel.fit(
+                                f"[bold yellow]Aucun {self.entity_name_plural} trouvé.[/bold yellow]",
+                                border_style="yellow",
+                            )
+                        )
+                        return
+
+                    # Calcul du nombre total de pages
+                    total_pages = math.ceil(total / page_size)
+
+                    # Affichage des informations de pagination
+                    console.print(f"\n[bold]Page {page} sur {total_pages}[/bold]")
+                    console.print(f"Total: {total} {self.entity_name_plural}")
+                    console.print(
+                        f"Affichage des éléments {((page-1)*page_size)+1} à {min(page*page_size, total)}"
+                    )
+
+                    # Affichage des éléments
+                    self.display_items(items)
+
+                    # Affichage des commandes de navigation
+                    if total_pages > 1:
+                        console.print("\n[bold]Navigation:[/bold]")
+                        if page > 1:
+                            console.print(f"Pour la page précédente: --page {page-1}")
+                        if page < total_pages:
+                            console.print(f"Pour la page suivante: --page {page+1}")
+                        console.print(
+                            f"Pour changer le nombre d'éléments par page: --page-size <nombre>"
+                        )
+
+                except PermissionError as e:
                     console.print(
                         Panel.fit(
-                            f"[bold yellow]Aucun {self.entity_name_plural} trouvé.[/bold yellow]",
-                            border_style="yellow",
+                            f"[bold red]Permission refusée:[/bold red]\n{e.message}",
+                            title="Erreur d'Autorisation",
+                            border_style="red",
                         )
                     )
-                    return
-
-                # Calcul du nombre total de pages
-                total_pages = math.ceil(total / page_size)
-
-                # Affichage des informations de pagination
-                console.print(f"\n[bold]Page {page} sur {total_pages}[/bold]")
-                console.print(f"Total: {total} {self.entity_name_plural}")
-                console.print(
-                    f"Affichage des éléments {((page-1)*page_size)+1} à {min(page*page_size, total)}"
-                )
-
-                # Affichage des éléments
-                self.display_items(items)
-
-                # Affichage des commandes de navigation
-                if total_pages > 1:
-                    console.print("\n[bold]Navigation:[/bold]")
-                    if page > 1:
-                        console.print(f"Pour la page précédente: --page {page-1}")
-                    if page < total_pages:
-                        console.print(f"Pour la page suivante: --page {page+1}")
+                except Exception as e:
                     console.print(
-                        f"Pour changer le nombre d'éléments par page: --page-size <nombre>"
+                        Panel.fit(
+                            f"[bold red]Erreur lors de la récupération des {self.entity_name_plural}:[/bold red]\n"
+                            f"[red]{str(e)}[/red]",
+                            border_style="red",
+                        )
                     )
 
             except Exception as e:
@@ -181,6 +202,14 @@ class BaseView:
                     return
 
                 self.display_item(item)
+            except PermissionError as e:
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Permission refusée:[/bold red]\n{e.message}",
+                        title="Erreur d'Autorisation",
+                        border_style="red",
+                    )
+                )
             except Exception as e:
                 console.print(
                     Panel.fit(
@@ -221,34 +250,53 @@ class BaseView:
                 return
 
             # Vérifier si l'entité existe avant de tenter de la supprimer
-            item = self.controller.get(token, db, id)
-            if not item:
+            try:
+                item = self.controller.get(token, db, id)
+                if not item:
+                    console.print(
+                        Panel.fit(
+                            f"[bold red]Le {self.entity_name} {id} n'existe pas ou vous n'avez pas les permissions pour y accéder.[/bold red]",
+                            border_style="red",
+                        )
+                    )
+                    return
+
+                # Tenter la suppression
+                success = self.controller.delete(token, db, id)
+
+                if success:
+                    console.print(
+                        Panel.fit(
+                            f"[bold green]{self.entity_name.capitalize()} {id} supprimé avec succès.[/bold green]",
+                            border_style="green",
+                        )
+                    )
+                else:
+                    # Message d'erreur plus détaillé
+                    console.print(
+                        Panel.fit(
+                            f"[bold red]Échec de la suppression du {self.entity_name} {id}.[/bold red]\n"
+                            f"[red]Cette action peut être restreinte pour les raisons suivantes:[/red]\n"
+                            f"[red]• Vous n'avez pas les permissions requises (département gestion uniquement)[/red]\n"
+                            f"[red]• L'élément est référencé par d'autres données dans le système[/red]",
+                            border_style="red",
+                        )
+                    )
+            except PermissionError as e:
+                # Affichage formaté de l'erreur de permission avec Rich
                 console.print(
                     Panel.fit(
-                        f"[bold red]Le {self.entity_name} {id} n'existe pas ou vous n'avez pas les permissions pour y accéder.[/bold red]",
+                        f"[bold red]Permission refusée:[/bold red]\n{e.message}",
+                        title="Erreur d'Autorisation",
                         border_style="red",
                     )
                 )
-                return
-
-            # Tenter la suppression
-            success = self.controller.delete(token, db, id)
-
-            if success:
+            except Exception as e:
+                # Gestion des autres erreurs potentielles
                 console.print(
                     Panel.fit(
-                        f"[bold green]{self.entity_name.capitalize()} {id} supprimé avec succès.[/bold green]",
-                        border_style="green",
-                    )
-                )
-            else:
-                # Message d'erreur plus détaillé
-                console.print(
-                    Panel.fit(
-                        f"[bold red]Échec de la suppression du {self.entity_name} {id}.[/bold red]\n"
-                        f"[red]Cette action peut être restreinte pour les raisons suivantes:[/red]\n"
-                        f"[red]• Vous n'avez pas les permissions requises (département gestion uniquement)[/red]\n"
-                        f"[red]• L'élément est référencé par d'autres données dans le système[/red]",
+                        f"[bold red]Une erreur inattendue s'est produite lors de la suppression:[/bold red]\n{str(e)}",
+                        title="Erreur Inattendue",
                         border_style="red",
                     )
                 )

@@ -11,7 +11,7 @@ from epiceventsCRM.utils.sentry_utils import capture_exception, capture_message,
 class AuthController:
     """
     Contrôleur pour la gestion de l'authentification et des tokens JWT.
-    
+
     Gère les opérations liées à l'authentification :
     - Génération de tokens JWT
     - Vérification de tokens

@@ -7,7 +7,8 @@ from rich.table import Table
 
 from epiceventsCRM.controllers.user_controller import UserController
 from epiceventsCRM.models.models import User
-from epiceventsCRM.utils.token_manager import decode_token
+from epiceventsCRM.utils.auth import verify_token
+from epiceventsCRM.utils.permissions import PermissionError
 from epiceventsCRM.views.base_view import BaseView, console
 
 
@@ -38,98 +39,14 @@ class UserView(BaseView):
             """Commandes pour la gestion des utilisateurs."""
             pass
 
-        @user.command("list-users")
-        @click.pass_context
-        def list_users(ctx):
-            """Liste tous les utilisateurs."""
-            try:
-                db = get_session()
-                token = get_token()
-
-                if not token:
-                    console.print(
-                        Panel.fit(
-                            "[red]Vous devez être connecté pour accéder à cette commande.[/red]\n"
-                            "Utilisez [bold]auth login[/bold] pour vous connecter.",
-                            title="Erreur d'authentification",
-                            border_style="red",
-                        )
-                    )
-                    return
-
-                # Vérifier le département de l'utilisateur
-                payload = decode_token(token)
-                if not payload or "department" not in payload:
-                    console.print(
-                        Panel.fit(
-                            "[red]Impossible de vérifier vos permissions.[/red]\n"
-                            "Veuillez vous reconnecter avec [bold]auth login[/bold].",
-                            title="Erreur de permission",
-                            border_style="red",
-                        )
-                    )
-                    return
-
-                department = payload["department"]
-                if department.lower() != "gestion":
-                    console.print(
-                        Panel.fit(
-                            f"[red]Accès refusé[/red]\n\n"
-                            f"Vous êtes membre du département [bold]{department}[/bold].\n"
-                            "Seuls les membres du département [bold]gestion[/bold] peuvent lister les utilisateurs.\n\n"
-                            "Si vous pensez que c'est une erreur, contactez votre administrateur.",
-                            title="Permission refusée",
-                            border_style="red",
-                        )
-                    )
-                    return
-
-                # Si on arrive ici, l'utilisateur a les bonnes permissions
-                users, total = UserController().get_all(token, db)
-
-                if users:
-                    # Création du tableau avec Rich
-                    table = Table(
-                        title="[bold]Liste des utilisateurs[/bold]",
-                        show_header=True,
-                        header_style="bold magenta",
-                        border_style="blue",
-                    )
-
-                    # Ajout des colonnes
-                    table.add_column("ID", style="cyan")
-                    table.add_column("Nom complet", style="green")
-                    table.add_column("Email", style="yellow")
-                    table.add_column("Département", style="blue")
-
-                    # Ajout des lignes
-                    for user in users:
-                        table.add_row(
-                            str(user.id),
-                            user.fullname,
-                            user.email,
-                            user.department.departement_name if user.department else "Non défini",
-                        )
-
-                    console.print(table)
-                else:
-                    console.print("[yellow]Aucun utilisateur trouvé.[/yellow]")
-
-            except Exception as e:
-                console.print(
-                    Panel.fit(
-                        f"[red]Une erreur inattendue s'est produite :[/red]\n{str(e)}",
-                        title="Erreur",
-                        border_style="red",
-                    )
-                )
-            finally:
-                if "db" in locals():
-                    db.close()
-
         user_view = UserView()
 
-        # Commande de création d'utilisateur
+        # Utilisation des commandes génériques de BaseView
+        user.add_command(user_view.create_list_command())
+        user.add_command(user_view.create_get_command())
+        user.add_command(user_view.create_delete_command())
+
+        # Commande de création d'utilisateur (spécifique)
         @user.command("create")
         @click.option("--email", "-e", required=True, help="Email de l'utilisateur")
         @click.option("--password", "-p", required=True, help="Mot de passe de l'utilisateur")
@@ -157,54 +74,52 @@ class UserView(BaseView):
 
             user_data = {"email": email, "password": password, "fullname": fullname}
 
-            user = user_view.controller.create_with_department(token, db, user_data, department)
-
-            if user:
+            try:
+                user = user_view.controller.create_with_department(token, db, user_data, department)
+                if user:
+                    console.print(
+                        Panel.fit(
+                            f"[bold green]Utilisateur {user.id} créé avec succès.[/bold green]",
+                            border_style="green",
+                        )
+                    )
+                    user_view.display_item(user)
+                else:
+                    console.print(
+                        Panel.fit(
+                            "[bold red]Échec de la création de l'utilisateur.[/bold red]\\nVérifiez les informations fournies et vos permissions.",
+                            title="Erreur de Création",
+                            border_style="red",
+                        )
+                    )
+            except PermissionError as e:
                 console.print(
                     Panel.fit(
-                        f"[bold green]Utilisateur {user.id} créé avec succès.[/bold green]",
-                        border_style="green",
+                        f"[bold red]Permission refusée:[/bold red]\\n{e.message}",
+                        title="Erreur d'Autorisation",
+                        border_style="red",
                     )
                 )
-                user_view.display_item(user)
-            else:
+            except (
+                ValueError
+            ) as e:  # Capturer les erreurs potentielles (ex: département ID invalide)
                 console.print(
                     Panel.fit(
-                        "[bold red]Échec de la création de l'utilisateur. Vérifiez vos permissions.[/bold red]",
+                        f"[bold red]Erreur de données:[/bold red]\\n{str(e)}",
+                        title="Erreur de Création",
+                        border_style="red",
+                    )
+                )
+            except Exception as e:
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Erreur lors de la création :[/bold red]\\n{str(e)}",
+                        title="Erreur Inattendue",
                         border_style="red",
                     )
                 )
 
-        # Commande pour obtenir un utilisateur spécifique
-        @user.command("get")
-        @click.argument("id", type=int)
-        @click.pass_context
-        def get_user(ctx, id):
-            """Affiche les détails d'un utilisateur."""
-            db = get_session()
-            token = get_token()
-
-            if not token:
-                console.print(
-                    Panel.fit(
-                        "[bold red]Veuillez vous connecter d'abord.[/bold red]", border_style="red"
-                    )
-                )
-                return
-
-            user = user_view.controller.get(token, db, id)
-
-            if user:
-                user_view.display_item(user)
-            else:
-                console.print(
-                    Panel.fit(
-                        f"[bold red]Utilisateur {id} non trouvé ou vous n'avez pas les permissions nécessaires.[/bold red]",
-                        border_style="red",
-                    )
-                )
-
-        # Commande de mise à jour d'utilisateur
+        # Commande de mise à jour d'utilisateur (spécifique)
         @user.command("update")
         @click.argument("id", type=int)
         @click.option("--email", "-e", help="Email de l'utilisateur")
@@ -244,83 +159,51 @@ class UserView(BaseView):
                 )
                 return
 
-            user = user_view.controller.update(token, db, id, user_data)
-
-            if user:
-                console.print(
-                    Panel.fit(
-                        f"[bold green]Utilisateur {id} mis à jour avec succès.[/bold green]",
-                        border_style="green",
-                    )
-                )
-                user_view.display_item(user)
-            else:
-                console.print(
-                    Panel.fit(
-                        f"[bold red]Échec de la mise à jour de l'utilisateur {id}. Vérifiez l'ID et vos permissions.[/bold red]",
-                        border_style="red",
-                    )
-                )
-
-        # Commande de suppression d'utilisateur
-        @user.command("delete")
-        @click.argument("id", type=int)
-        @click.option("--confirm", is_flag=True, help="Confirmer la suppression sans demander")
-        @click.pass_context
-        def delete_user(ctx, id, confirm):
-            """Supprime un utilisateur."""
-            db = get_session()
-            token = get_token()
-
-            if not token:
-                console.print(
-                    Panel.fit(
-                        "[bold red]Veuillez vous connecter d'abord.[/bold red]", border_style="red"
-                    )
-                )
-                return
-
-            # Vérifier si l'utilisateur existe
-            user = user_view.controller.get(token, db, id)
-            if not user:
-                console.print(
-                    Panel.fit(
-                        f"[bold red]Utilisateur {id} non trouvé ou vous n'avez pas les permissions nécessaires.[/bold red]",
-                        border_style="red",
-                    )
-                )
-                return
-
-            # Confirmation de suppression
-            if not confirm:
-                should_delete = Confirm.ask(
-                    f"Êtes-vous sûr de vouloir supprimer l'utilisateur {id} ({user.fullname}) ?"
-                )
-                if not should_delete:
+            try:
+                user = user_view.controller.update(token, db, id, user_data)
+                if user:
                     console.print(
                         Panel.fit(
-                            "[bold yellow]Suppression annulée.[/bold yellow]", border_style="yellow"
+                            f"[bold green]Utilisateur {id} mis à jour avec succès.[/bold green]",
+                            border_style="green",
                         )
                     )
-                    return
-
-            # Suppression
-            if user_view.controller.delete(token, db, id):
+                    user_view.display_item(user)
+                else:
+                    console.print(
+                        Panel.fit(
+                            f"[bold red]Échec de la mise à jour de l'utilisateur {id}.[/bold red]\\nVérifiez l'ID et vos permissions.",
+                            title="Erreur de Mise à Jour",
+                            border_style="red",
+                        )
+                    )
+            except PermissionError as e:
                 console.print(
                     Panel.fit(
-                        f"[bold green]Utilisateur {id} supprimé avec succès.[/bold green]",
-                        border_style="green",
+                        f"[bold red]Permission refusée:[/bold red]\\n{e.message}",
+                        title="Erreur d'Autorisation",
+                        border_style="red",
                     )
                 )
-            else:
+            except (
+                ValueError
+            ) as e:  # Capturer les erreurs potentielles (ex: département ID invalide lors de l'update)
                 console.print(
                     Panel.fit(
-                        f"[bold red]Échec de la suppression de l'utilisateur {id}.[/bold red]",
+                        f"[bold red]Erreur de données:[/bold red]\\n{str(e)}",
+                        title="Erreur de Mise à Jour",
+                        border_style="red",
+                    )
+                )
+            except Exception as e:
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Erreur lors de la mise à jour :[/bold red]\\n{str(e)}",
+                        title="Erreur Inattendue",
                         border_style="red",
                     )
                 )
 
-        # Commande pour trouver un utilisateur par email
         @user.command("find")
         @click.option("--email", "-e", required=True, help="Email de l'utilisateur à rechercher")
         @click.pass_context
@@ -337,14 +220,35 @@ class UserView(BaseView):
                 )
                 return
 
-            user = user_view.controller.get_by_email(token, db, email)
-
-            if user:
-                user_view.display_item(user)
-            else:
+            try:
+                user = user_view.controller.find_by_email(token, db, email)
+                if user:
+                    console.print(
+                        Panel.fit(
+                            f"[bold green]Utilisateur trouvé.[/bold green]", border_style="green"
+                        )
+                    )
+                    user_view.display_item(user)
+                else:
+                    console.print(
+                        Panel.fit(
+                            f"[bold yellow]Aucun utilisateur trouvé avec l'email: {email}[/bold yellow]",
+                            border_style="yellow",
+                        )
+                    )
+            except PermissionError as e:
                 console.print(
                     Panel.fit(
-                        f"[bold red]Aucun utilisateur trouvé avec l'email {email} ou vous n'avez pas les permissions nécessaires.[/bold red]",
+                        f"[bold red]Permission refusée:[/bold red]\\n{e.message}",
+                        title="Erreur d'Autorisation",
+                        border_style="red",
+                    )
+                )
+            except Exception as e:
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Erreur lors de la recherche :[/bold red]\\n{str(e)}",
+                        title="Erreur Inattendue",
                         border_style="red",
                     )
                 )
@@ -352,44 +256,58 @@ class UserView(BaseView):
     def display_items(self, users: List[Any]):
         """
         Affiche une liste d'utilisateurs sous forme de tableau.
-
-        Args:
-            users (List[Any]): La liste d'utilisateurs à afficher
         """
-        table = Table(title="Liste des utilisateurs")
+        if not users:
+            console.print("[yellow]Aucun utilisateur à afficher.[/yellow]")
+            return
 
-        # Définition des colonnes
-        table.add_column("ID", style="cyan")
-        table.add_column("Email", style="green")
-        table.add_column("Nom complet", style="magenta")
-        table.add_column("Département", style="yellow")
+        table = Table(
+            title="[bold]Liste des utilisateurs[/bold]",
+            show_header=True,
+            header_style="bold magenta",
+            border_style="blue",
+        )
+
+        # Ajout des colonnes
+        table.add_column("ID", style="cyan", justify="right")
+        table.add_column("Nom complet", style="green")
+        table.add_column("Email", style="yellow")
+        table.add_column("Département", style="blue")
 
         # Ajout des lignes
         for user in users:
-            department_name = user.department.departement_name if user.department else "N/A"
-            table.add_row(str(user.id), user.email, user.fullname, department_name)
+            department_name = user.department.departement_name if user.department else "Non défini"
+            table.add_row(
+                str(user.id),
+                user.fullname,
+                user.email,
+                department_name,
+            )
 
         console.print(table)
 
     def display_item(self, user: User) -> None:
         """
-        Affiche les détails d'un utilisateur.
-
-        Args:
-            user (User): L'utilisateur à afficher
+        Affiche les détails d'un utilisateur spécifique dans un Panel.
         """
-        table = Table(title=f"Détails de l'utilisateur #{user.id}")
+        if not user:
+            console.print("[red]Aucun utilisateur à afficher.[/red]")
+            return
 
-        # Définition des colonnes
-        table.add_column("Propriété", style="cyan")
-        table.add_column("Valeur", style="green")
+        table = Table(
+            title=f"Détails de l'utilisateur #{user.id}",
+            show_header=False,
+            box=None,
+            padding=(0, 1),
+        )
+        table.add_column(style="cyan")
+        table.add_column(style="green")
 
-        # Ajout des informations
-        department_name = user.department.departement_name if user.department else "N/A"
+        table.add_row("ID:", str(user.id))
+        table.add_row("Nom complet:", user.fullname)
+        table.add_row("Email:", user.email)
+        # Ne pas afficher le mot de passe
+        department_name = user.department.departement_name if user.department else "Non défini"
+        table.add_row("Département:", department_name)
 
-        table.add_row("ID", str(user.id))
-        table.add_row("Email", user.email)
-        table.add_row("Nom complet", user.fullname)
-        table.add_row("Département", department_name)
-
-        console.print(table)
+        console.print(Panel(table, title=f"Utilisateur {user.fullname}", border_style="blue"))

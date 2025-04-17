@@ -1,24 +1,24 @@
 import pytest
-from unittest.mock import patch, MagicMock
-import os
-
-from epiceventsCRM.database import get_session
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
 
-class TestDatabase:
-    @patch("epiceventsCRM.database.create_engine")
-    @patch("epiceventsCRM.database.sessionmaker")
-    def test_get_session(self, mock_sessionmaker, mock_create_engine):
-        """Test que la fonction get_session retourne une session."""
-        mock_engine = MagicMock()
-        mock_create_engine.return_value = mock_engine
+class TestDatabaseConnection:
+    """Tests basiques de connexion à la base de données de test"""
 
-        mock_session_class = MagicMock()
-        mock_session = MagicMock()
-        mock_session_class.return_value = mock_session
+    def test_connection(self, engine):
+        """Teste si la connexion à la base de données peut être établie."""
+        try:
+            connection = engine.connect()
+            assert connection is not None
+            connection.close()
+        except Exception as e:
+            pytest.fail(f"Échec de la connexion à la base de données de test: {e}")
 
-        with patch("epiceventsCRM.database.SessionLocal", mock_session_class):
-            session = get_session()
-
-            assert session == mock_session
-            mock_session_class.assert_called_once()
+    def test_session_creation(self, db_session):
+        """Teste si une session peut être créée."""
+        assert db_session is not None
+        # Tester une opération simple
+        result = db_session.execute(text("SELECT 1"))
+        assert result.scalar() == 1
+        db_session.close()

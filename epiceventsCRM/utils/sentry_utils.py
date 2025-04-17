@@ -4,12 +4,14 @@ import os
 from functools import wraps
 import sentry_sdk
 
+
 def get_sentry_dsn():
     """
     Récupère le DSN Sentry de manière dynamique.
     Cela permet de s'assurer que nous avons toujours la dernière valeur.
     """
     return os.getenv("SENTRY_DSN")
+
 
 def capture_exception(func):
     """
@@ -24,6 +26,7 @@ def capture_exception(func):
     Raises:
         Exception: L'exception originale est relancée après capture
     """
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         try:

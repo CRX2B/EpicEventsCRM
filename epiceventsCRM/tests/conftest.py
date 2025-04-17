@@ -9,11 +9,6 @@ from epiceventsCRM.config import DATABASE_URL
 from epiceventsCRM.models.models import Base, Department, User, Client, Contract, Event
 from epiceventsCRM.utils.auth import hash_password
 
-# Création d'une base de données de test
-TEST_DATABASE_URL = DATABASE_URL + "_test"
-engine = create_engine(TEST_DATABASE_URL)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 
 @pytest.fixture(scope="session")
 def engine():

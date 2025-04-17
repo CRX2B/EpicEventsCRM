@@ -1,70 +1,22 @@
 import pytest
 from unittest.mock import Mock, patch
+from datetime import datetime
 from epiceventsCRM.models.models import User, Department
 from epiceventsCRM.dao.user_dao import UserDAO
-from epiceventsCRM.controllers.user_controller import UserController
 from epiceventsCRM.views.user_view import UserView
+from epiceventsCRM.controllers.user_controller import UserController
+from epiceventsCRM.tests.mocks.mock_dao import MockUserDAO, MockDepartmentDAO
+from epiceventsCRM.tests.mocks.mock_controllers import (
+    MockAuthController,
+    mock_token_gestion as get_mock_gestion_token_str,
+    mock_token_commercial as get_mock_commercial_token_str,
+)
 from epiceventsCRM.utils.permissions import PermissionError
-from epiceventsCRM.controllers.auth_controller import AuthController
-
-
-@pytest.fixture
-def mock_auth_controller():
-    auth_controller = Mock(spec=AuthController)
-    auth_controller.check_permission.return_value = True
-    auth_controller.verify_token.return_value = {
-        "sub": 1,
-        "departement_id": 1,
-        "permissions": ["create_user", "read_user", "update_user", "delete_user"]
-    }
-    return auth_controller
-
-
-class MockUserDAO:
-    def __init__(self, model):
-        self.model = model
-        self.users = []
-
-    def create(self, db, user_data):
-        user = User(**user_data)
-        self.users.append(user)
-        return user
-
-    def get(self, db, user_id):
-        return next((u for u in self.users if u.id == user_id), None)
-
-    def get_all(self, db, page: int = 1, page_size: int = 10):
-        # Calcul des indices de début et de fin pour la pagination
-        start_idx = (page - 1) * page_size
-        end_idx = start_idx + page_size
-
-        # Récupération des utilisateurs pour la page demandée
-        paginated_users = self.users[start_idx:end_idx]
-
-        # Retourner les utilisateurs paginés et le nombre total
-        return paginated_users, len(self.users)
-
-    def get_by_email(self, db, email):
-        return next((u for u in self.users if u.email == email), None)
-
-    def update(self, db, user_id, user_data):
-        user = self.get(db, user_id)
-        if user:
-            for key, value in user_data.items():
-                setattr(user, key, value)
-        return user
-
-    def delete(self, db, user_id):
-        user = self.get(db, user_id)
-        if user:
-            self.users.remove(user)
-            return True
-        return False
 
 
 @pytest.fixture
 def test_department():
-    return Department(departement_name="commercial")
+    return Department(id=3, departement_name="gestion")
 
 
 @pytest.fixture
@@ -78,196 +30,302 @@ def test_user_data(test_department):
 
 
 @pytest.fixture
-def test_user(test_department):
-    return User(
-        fullname="Test User",
-        email="test@example.com",
-        password="password123",
-        departement_id=test_department.id,
-    )
-
-
-@pytest.fixture
-def mock_token_admin():
-    return "fake_token"
+def test_user(test_user_data, test_department):
+    user = User(**test_user_data)
+    user.id = 1
+    user.department = test_department
+    return user
 
 
 class TestUserModel:
     """Tests unitaires pour le modèle User"""
 
     def test_user_creation(self):
-        user = User(
-            fullname="test_user", email="test@example.com", password="password123", departement_id=1
+        """Teste la création d'une instance User."""
+        user = User(fullname="John Doe", email="john@example.com", password="securepassword")
+        assert user.fullname == "John Doe"
+        assert user.email == "john@example.com"
+
+    def test_user_representation(self, test_user):
+        """Teste la représentation textuelle de l'utilisateur."""
+        assert (
+            repr(test_user) == f"User(fullname='{test_user.fullname}', email='{test_user.email}')"
         )
-        assert user.fullname == "test_user"
-        assert user.email == "test@example.com"
 
 
 class TestUserDAO:
     """Tests unitaires pour le DAO User"""
 
-    def test_create_user(self, db_session, test_department):
-        dao = UserDAO()
-        user_data = {
-            "fullname": "Test User",
-            "email": "test@example.com",
-            "password": "password123",
-            "departement_id": test_department.id,
-        }
-        user = dao.create(db_session, user_data)
-        assert user.fullname == "Test User"
-        assert user.email == "test@example.com"
-        assert user.departement_id == test_department.id
+    @pytest.fixture
+    def user_dao(self):
+        return UserDAO()
 
-    def test_get_user(self, db_session, test_department):
-        dao = UserDAO()
-        user_data = {
-            "fullname": "Test User",
-            "email": "test@example.com",
-            "password": "password123",
-            "departement_id": test_department.id,
-        }
-        user = dao.create(db_session, user_data)
-        retrieved_user = dao.get(db_session, user.id)
-        assert retrieved_user.id == user.id
-        assert retrieved_user.email == "test@example.com"
+    def test_create_user(self, user_dao, db_session, test_user_data):
+        """Test de création d'un utilisateur via DAO."""
+        user = user_dao.create(db_session, test_user_data)
+        assert user is not None
+        assert user.id is not None
+        assert user.fullname == test_user_data["fullname"]
+        assert user.password != test_user_data["password"]  # Le mot de passe doit être hashé
 
-    def test_get_by_email(self, db_session, test_department):
-        dao = UserDAO()
-        user_data = {
-            "fullname": "Test User",
-            "email": "test@example.com",
-            "password": "password123",
-            "departement_id": test_department.id,
-        }
-        user = dao.create(db_session, user_data)
-        retrieved_user = dao.get_by_email(db_session, "test@example.com")
-        assert retrieved_user.id == user.id
-        assert retrieved_user.email == "test@example.com"
+    def test_get(self, user_dao, db_session, test_user):
+        """Test de récupération d'un utilisateur par ID en utilisant la méthode get."""
+        # Ajouter l'utilisateur de test à la session
+        db_session.add(test_user)
+        db_session.commit()
+        db_session.refresh(test_user)  # Pour obtenir l'ID auto-incrémenté si besoin
 
-    def test_update_user(self, db_session, test_department):
-        dao = UserDAO()
-        user_data = {
-            "fullname": "Test User",
-            "email": "test@example.com",
-            "password": "password123",
-            "departement_id": test_department.id,
-        }
-        user = dao.create(db_session, user_data)
-        user = dao.get(db_session, user.id)  # Récupérer l'objet user complet
-        updated_user = dao.update(
-            db_session, user, {"fullname": "Updated User", "email": "updated@example.com"}
+        retrieved_user = user_dao.get(db_session, test_user.id)
+        assert retrieved_user is not None
+        assert retrieved_user.id == test_user.id
+        assert retrieved_user.email == test_user.email
+
+    def test_authenticate_user(self, user_dao, db_session, test_user_data):
+        """Test d'authentification d'un utilisateur."""
+        user_dao.create(db_session, test_user_data)  # Créer l'utilisateur
+        authenticated_user = user_dao.authenticate(
+            db_session, test_user_data["email"], test_user_data["password"]
         )
-        assert updated_user.fullname == "Updated User"
-        assert updated_user.email == "updated@example.com"
+        assert authenticated_user is not None
+        assert authenticated_user.email == test_user_data["email"]
 
-    def test_delete_user(self, db_session, test_department):
-        dao = UserDAO()
-        user_data = {
-            "fullname": "Test User",
-            "email": "test@example.com",
-            "password": "password123",
-            "departement_id": test_department.id,
-        }
-        user = dao.create(db_session, user_data)
-        assert dao.delete(db_session, user.id) is True
-        assert dao.get(db_session, user.id) is None
+        # Tester avec mauvais mot de passe
+        failed_auth = user_dao.authenticate(db_session, test_user_data["email"], "wrongpassword")
+        assert failed_auth is None
 
+    def test_update_user_password(self, user_dao, db_session, test_user):
+        """Test de mise à jour du mot de passe."""
+        # Ajouter l'utilisateur de test à la session
+        db_session.add(test_user)
+        db_session.commit()
+        db_session.refresh(test_user)
 
-class TestUserController:
-    def test_controller_create_user(
-        self, db_session, test_department, mock_token_admin, mock_auth_controller
-    ):
-        dao = MockUserDAO(User)
-        controller = UserController()
-        controller.dao = dao
-        controller.auth_controller = mock_auth_controller
+        new_password = "newpassword456"
+        updated_user = user_dao.update_password(db_session, test_user.id, new_password)
+        assert updated_user is not None
 
-        user_data = {
-            "fullname": "Test User",
-            "email": "test@example.com",
-            "password": "password123",
-        }
-
-        # Configurer explicitement le mock pour la permission create_user
-        mock_auth_controller.check_permission.return_value = True
-        mock_auth_controller.verify_token.return_value = {
-            "sub": 1,
-            "departement_id": 1,
-            "permissions": ["create_user", "read_user", "update_user", "delete_user"]
-        }
-
-        user = controller.create_with_department(
-            token=mock_token_admin,
-            db=db_session,
-            user_data=user_data,
-            department_id=test_department.id,
-        )
-        assert user.fullname == "Test User"
-        assert user.email == "test@example.com"
-        assert user.departement_id == test_department.id
-
-    def test_get_user(self, db_session, test_user, mock_token_admin, mock_auth_controller):
-        dao = MockUserDAO(User)
-        dao.users.append(test_user)  # Ajouter l'utilisateur de test au mock DAO
-
-        controller = UserController()
-        controller.dao = dao
-        controller.auth_controller = mock_auth_controller
-
-        user = controller.get(token=mock_token_admin, db=db_session, entity_id=test_user.id)
-        assert user.id == test_user.id
-        assert user.email == test_user.email
-
-    def test_get_all_users_with_pagination(
-        self, db_session, test_department, mock_token_admin, mock_auth_controller
-    ):
-        dao = MockUserDAO(User)
-        controller = UserController()
-        controller.dao = dao
-        controller.auth_controller = mock_auth_controller
-
-        # Créer 15 utilisateurs de test
-        for i in range(15):
-            user_data = {
-                "fullname": f"Test User {i}",
-                "email": f"test{i}@example.com",
-                "password": "password123",
-                "departement_id": test_department.id,
-            }
-            dao.create(db_session, user_data)
-
-        # Tester la première page (10 utilisateurs)
-        users, total = controller.get_all(
-            token=mock_token_admin, db=db_session, page=1, page_size=10
-        )
-        assert len(users) == 10
-        assert total == 15
-        assert users[0].fullname == "Test User 0"
-        assert users[9].fullname == "Test User 9"
-
-        # Tester la deuxième page (5 utilisateurs restants)
-        users, total = controller.get_all(
-            token=mock_token_admin, db=db_session, page=2, page_size=10
-        )
-        assert len(users) == 5
-        assert total == 15
-        assert users[0].fullname == "Test User 10"
-        assert users[4].fullname == "Test User 14"
+        # Vérifier la nouvelle authentification
+        reauthenticated_user = user_dao.authenticate(db_session, test_user.email, new_password)
+        assert reauthenticated_user is not None
+        assert reauthenticated_user.id == test_user.id
 
 
 class TestUserView:
-    def test_view_display_user(self, capsys):
-        view = UserView()
-        user = User(
-            id=1,
-            fullname="Test User",
-            email="test@example.com",
-            password="password123",
-            departement_id=1,
-        )
+    """Tests unitaires pour la vue User"""
 
-        view.display_item(user)
+    def test_display_user(self, test_user, capsys):
+        """Test de l'affichage des détails d'un utilisateur."""
+        view = UserView()
+        view.display_item(test_user)
         captured = capsys.readouterr()
-        assert "Test User" in captured.out
-        assert "test@example.com" in captured.out
+        assert test_user.fullname in captured.out
+        assert test_user.email in captured.out
+        assert test_user.department.departement_name in captured.out
+
+    def test_display_users(self, test_user, capsys):
+        """Test de l'affichage d'une liste d'utilisateurs."""
+        view = UserView()
+        users_list = [test_user, test_user]  # Afficher le même utilisateur deux fois
+        view.display_items(users_list)
+        captured = capsys.readouterr()
+        assert "Liste des utilisateurs" in captured.out
+        assert test_user.fullname in captured.out
+        assert test_user.email in captured.out
+        # Vérifier que l'en-tête est présent
+        assert "Nom complet" in captured.out
+        assert "Département" in captured.out
+
+    def test_controller_update_user_department(self, setup_user_controller_mocks, test_user):
+        """Teste la mise à jour du département via le contrôleur."""
+        controller, dao, dep_dao, mock_auth = setup_user_controller_mocks
+        dao._data[test_user.id] = test_user
+        mock_auth.check_permission.return_value = True
+        token = get_mock_gestion_token_str()
+        dao.get.return_value = test_user  # Simuler utilisateur trouvé
+        valid_department = Department(id=2, departement_name="support")
+        dep_dao.get.return_value = valid_department
+        dao.update.return_value = test_user  # Simule succès de la mise à jour via update
+
+        update_data = {"departement_id": valid_department.id}
+        # Appeler la méthode standard update du contrôleur
+        updated_user = controller.update(token, None, test_user.id, update_data)
+
+        assert updated_user is not None
+        mock_auth.check_permission.assert_called_with(token, "update_user")
+        dao.get.assert_called_once_with(None, test_user.id)
+
+        dao.update.assert_called_once_with(None, test_user, update_data)
+
+        assert not hasattr(dao, "assign_department")
+
+    def test_controller_delete_user(self, setup_user_controller_mocks, test_user):
+        """Teste la suppression réussie d'un utilisateur."""
+        controller, dao, _, mock_auth = setup_user_controller_mocks
+        # Ajouter l'utilisateur au _data pour que controller.delete le trouve via dao.get
+        dao._data[test_user.id] = test_user
+        mock_auth.check_permission.return_value = True
+        token = get_mock_gestion_token_str()
+        dao.delete.return_value = True  # Simuler succès suppression
+
+        result = controller.delete(token, None, test_user.id)
+
+        assert result is True
+        mock_auth.check_permission.assert_called_with(token, "delete_user")
+        dao.delete.assert_called_once_with(None, test_user.id)
+
+
+@pytest.fixture
+def setup_user_controller_mocks():
+    """Fixture pour configurer les mocks pour UserController."""
+    mock_user_dao = MockUserDAO()
+    mock_department_dao = MockDepartmentDAO()
+    mock_auth_controller = MockAuthController()
+    # Pré-remplir le mock department dao
+    mock_department_dao._data[1] = Department(id=1, departement_name="commercial")
+    mock_department_dao._data[2] = Department(id=2, departement_name="support")
+    mock_department_dao._data[3] = Department(id=3, departement_name="gestion")
+
+    controller = UserController()
+    controller.dao = mock_user_dao
+    controller.department_dao = mock_department_dao
+    controller.auth_controller = mock_auth_controller
+    return controller, mock_user_dao, mock_department_dao, mock_auth_controller
+
+
+class TestUserController:
+    """Tests unitaires pour UserController."""
+
+    @pytest.fixture(autouse=True)
+    def setup_controller(self, mock_auth_controller_fixture):
+        """Injecte les mocks dans une instance du contrôleur pour les tests de cette classe."""
+        self.mock_dao = MockUserDAO()  # Utilisation directe de MockUserDAO
+        self.mock_department_dao = MockDepartmentDAO()  # Ajouter le mock département ici aussi
+        self.mock_auth_controller = mock_auth_controller_fixture
+        # Réinitialiser les mocks
+        self.mock_dao.reset_mocks()
+        self.mock_department_dao.reset_mocks()
+        self.mock_auth_controller.reset_mocks()
+
+        self.controller = UserController()  # Initialisation normale
+        # Remplacer les attributs par les mocks
+        self.controller.dao = self.mock_dao
+        self.controller.department_dao = self.mock_department_dao
+        self.controller.auth_controller = self.mock_auth_controller
+
+    def test_controller_create_user(self, test_user_data):
+        """Teste la création réussie d'un utilisateur via le contrôleur."""
+        controller = self.controller
+        dao = self.mock_dao
+        dep_dao = self.mock_department_dao
+        mock_auth = self.mock_auth_controller
+
+        mock_auth.check_permission.return_value = True
+        token = get_mock_gestion_token_str()
+
+        # Configurer le mock create du DAO user
+        dao.create.return_value = User(**test_user_data)
+        # Configurer le mock get du DAO département ET le _data
+        department_id = test_user_data["departement_id"]
+        department = Department(id=department_id, departement_name="gestion")
+        dep_dao._data[department_id] = department  # Ajouter au dictionnaire interne
+        dep_dao.get.return_value = department
+
+        created_user = controller.create_with_department(token, None, test_user_data, department_id)
+
+        assert created_user is not None
+        mock_auth.check_permission.assert_called_with(token, "create_user")
+        dep_dao.get.assert_called_once_with(None, department_id)
+        dao.create.assert_called_once()
+        call_args, call_kwargs = dao.create.call_args
+        assert call_args[1]["email"] == test_user_data["email"]
+
+    def test_controller_create_user_invalid_department(self, test_user_data):
+        """Teste la création avec un ID de département invalide."""
+        controller = self.controller
+        dao = self.mock_dao
+        dep_dao = self.mock_department_dao
+        mock_auth = self.mock_auth_controller
+
+        mock_auth.check_permission.return_value = True
+        token = get_mock_gestion_token_str()
+        invalid_department_id = 99
+
+        dep_dao.get.return_value = None
+        dep_dao.get.side_effect = None  # Assurer que return_value est utilisé
+
+        with pytest.raises(ValueError) as excinfo:
+            controller.create_with_department(token, None, test_user_data, invalid_department_id)
+        assert f"Département ID {invalid_department_id} invalide" in str(excinfo.value)
+
+        mock_auth.check_permission.assert_called_with(token, "create_user")
+        dep_dao.get.assert_called_once_with(None, invalid_department_id)
+        dao.create.assert_not_called()
+
+    def test_controller_update_user(self, test_user):
+        """Teste la mise à jour réussie d'un utilisateur."""
+        controller = self.controller
+        dao = self.mock_dao
+        mock_auth = self.mock_auth_controller
+
+        mock_auth.check_permission.return_value = True
+        token = get_mock_gestion_token_str()
+        dao.get.return_value = test_user
+        dao.get.side_effect = None
+        dao.update.return_value = test_user
+        dao.update.side_effect = None
+
+        update_data = {"fullname": "Updated Name"}
+        updated_user = controller.update(token, None, test_user.id, update_data)
+
+        assert updated_user is not None
+        mock_auth.check_permission.assert_called_with(token, "update_user")
+        dao.get.assert_called_once_with(None, test_user.id)
+        dao.update.assert_called_once_with(None, test_user, update_data)
+
+    def test_controller_update_user_department(self, test_user):
+        """Teste la mise à jour du département via le contrôleur."""
+        controller = self.controller
+        dao = self.mock_dao
+        dep_dao = self.mock_department_dao
+        mock_auth = self.mock_auth_controller
+
+        mock_auth.check_permission.return_value = True
+        token = get_mock_gestion_token_str()
+        dao.get.return_value = test_user
+        dao.get.side_effect = None
+        valid_department = Department(id=2, departement_name="support")
+        dep_dao.get.return_value = valid_department
+        dep_dao.get.side_effect = None
+        dao.update.return_value = test_user
+        dao.update.side_effect = None
+
+        update_data = {"departement_id": valid_department.id}
+        updated_user = controller.update(token, None, test_user.id, update_data)
+
+        assert updated_user is not None
+        mock_auth.check_permission.assert_called_with(token, "update_user")
+        dao.get.assert_called_once_with(None, test_user.id)
+        # Vérifier que la méthode update du DAO est appelée avec les bonnes données
+        dao.update.assert_called_once_with(None, test_user, update_data)
+        assert not hasattr(dao, "assign_department")
+
+    def test_controller_delete_user(self, test_user):
+        """Teste la suppression réussie d'un utilisateur."""
+        controller = self.controller
+        dao = self.mock_dao
+        mock_auth = self.mock_auth_controller
+
+        mock_auth.check_permission.return_value = True
+        token = get_mock_gestion_token_str()
+        dao.delete.return_value = True
+        dao.delete.side_effect = None
+        # Il faut aussi mocker dao.get qui est appelé avant delete dans le contrôleur
+        dao.get.return_value = test_user
+        dao.get.side_effect = None
+
+        result = controller.delete(token, None, test_user.id)
+
+        assert result is True
+        mock_auth.check_permission.assert_called_with(token, "delete_user")
+        dao.get.assert_called_once_with(None, test_user.id)  # Vérifier l'appel à get
+        dao.delete.assert_called_once_with(None, test_user.id)

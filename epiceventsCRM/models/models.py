@@ -7,20 +7,21 @@ Base = declarative_base()
 class User(Base):
     """
     Modèle représentant un utilisateur du système.
-    
+
     Attributes:
         id (int): Identifiant unique de l'utilisateur
         fullname (str): Nom complet de l'utilisateur
         email (str): Adresse email unique de l'utilisateur
         password (str): Mot de passe hashé de l'utilisateur
         departement_id (int): ID du département auquel appartient l'utilisateur
-        
+
     Relationships:
         department: Relation avec le département de l'utilisateur
         clients: Liste des clients gérés par l'utilisateur
         contracts: Liste des contrats gérés par l'utilisateur
         events: Liste des événements supportés par l'utilisateur
     """
+
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -42,7 +43,7 @@ class User(Base):
 class Client(Base):
     """
     Modèle représentant un client du système.
-    
+
     Attributes:
         id (int): Identifiant unique du client
         fullname (str): Nom complet du client
@@ -52,12 +53,13 @@ class Client(Base):
         create_date (DateTime): Date de création du client
         update_date (DateTime): Date de dernière mise à jour
         sales_contact_id (int): ID du commercial responsable
-        
+
     Relationships:
         sales_contact: Relation avec le commercial responsable
         contracts: Liste des contrats du client
         events: Liste des événements du client
     """
+
     __tablename__ = "clients"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -81,7 +83,7 @@ class Client(Base):
 class Contract(Base):
     """
     Modèle représentant un contrat dans le système.
-    
+
     Attributes:
         id (int): Identifiant unique du contrat
         client_id (int): ID du client associé
@@ -90,12 +92,13 @@ class Contract(Base):
         create_date (DateTime): Date de création du contrat
         status (bool): Statut du contrat (signé ou non)
         sales_contact_id (int): ID du commercial responsable
-        
+
     Relationships:
         client: Relation avec le client
         sales_contact: Relation avec le commercial responsable
         events: Liste des événements associés au contrat
     """
+
     __tablename__ = "contracts"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -115,7 +118,7 @@ class Contract(Base):
 class Event(Base):
     """
     Modèle représentant un événement dans le système.
-    
+
     Attributes:
         id (int): Identifiant unique de l'événement
         name (str): Nom de l'événement
@@ -127,12 +130,13 @@ class Event(Base):
         support_contact_id (int): ID du contact support
         attendees (int): Nombre de participants
         notes (str): Notes sur l'événement
-        
+
     Relationships:
         contract: Relation avec le contrat associé
         client: Relation avec le client
         support_contact: Relation avec le contact support
     """
+
     __tablename__ = "events"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -165,14 +169,15 @@ class Event(Base):
 class Department(Base):
     """
     Modèle représentant un département dans le système.
-    
+
     Attributes:
         id (int): Identifiant unique du département
         departement_name (str): Nom du département
-        
+
     Relationships:
         users: Liste des utilisateurs appartenant au département
     """
+
     __tablename__ = "departments"
 
     id = Column(Integer, primary_key=True, autoincrement=True)

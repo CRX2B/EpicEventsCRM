@@ -28,7 +28,7 @@ if SENTRY_DSN:
         # Suivi des profils des performances
         profiles_sample_rate=1.0,
         # Activer les messages de transport dans la console
-        debug=True,
+        debug=False,
         shutdown_timeout=2.0,
     )
 

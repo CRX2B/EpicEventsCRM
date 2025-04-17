@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from epiceventsCRM.controllers.client_controller import ClientController
 from epiceventsCRM.models.models import Client
 from epiceventsCRM.views.base_view import BaseView
+from epiceventsCRM.utils.permissions import PermissionError
 
 console = Console()
 
@@ -117,17 +118,37 @@ class ClientView(BaseView):
                 )
                 return
 
-            client = client_view.controller.update(token, db, id, client_data)
+            try:
+                client = client_view.controller.update(token, db, id, client_data)
 
-            if client:
-                console.print(
-                    Panel.fit(f"[bold green]Client {id} mis à jour avec succès.[/bold green]")
-                )
-                client_view.display_item(client)
-            else:
+                if client:
+                    console.print(
+                        Panel.fit(f"[bold green]Client {id} mis à jour avec succès.[/bold green]")
+                    )
+                    client_view.display_item(client)
+                else:
+                    # Ce cas pourrait indiquer un problème non lié à la permission si l'exception n'est pas levée
+                    console.print(
+                        Panel.fit(
+                            f"[bold red]Échec de la mise à jour du client {id}. Vérifiez l'ID ou contactez un administrateur.[/bold red]"
+                        )
+                    )
+            except PermissionError as e:
+                # Affichage formaté de l'erreur de permission avec Rich
                 console.print(
                     Panel.fit(
-                        f"[bold red]Échec de la mise à jour du client {id}. Vérifiez l'ID et vos permissions.[/bold red]"
+                        f"[bold red]Permission refusée:[/bold red]\n{e.message}",
+                        title="Erreur d'Autorisation",
+                        border_style="red",
+                    )
+                )
+            except Exception as e:
+                # Gestion des autres erreurs potentielles
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Une erreur inattendue s'est produite lors de la mise à jour:[/bold red]\n{str(e)}",
+                        title="Erreur Inattendue",
+                        border_style="red",
                     )
                 )
 
@@ -221,184 +242,3 @@ class ClientView(BaseView):
 
         # Affichage du tableau
         console.print(table)
-
-    def display_client(self, client: Client) -> None:
-        """
-        Affiche les informations d'un client.
-
-        Args:
-            client (Client): Le client à afficher
-        """
-        if not client:
-            console.print(Panel.fit("[bold red]Client non trouvé.[/bold red]"))
-            return
-
-        table = Table(title=f"Détails du client #{client.id}")
-
-        # Définition des colonnes
-        table.add_column("Propriété", style="cyan")
-        table.add_column("Valeur", style="green")
-
-        # Ajout des informations
-        commercial = client.sales_contact.fullname if client.sales_contact else "Non assigné"
-        create_date = (
-            client.create_date.strftime("%Y-%m-%d %H:%M:%S")
-            if client.create_date
-            else "Non définie"
-        )
-        update_date = (
-            client.update_date.strftime("%Y-%m-%d %H:%M:%S")
-            if client.update_date
-            else "Non définie"
-        )
-
-        table.add_row("ID", str(client.id))
-        table.add_row("Nom complet", client.fullname)
-        table.add_row("Email", client.email)
-        table.add_row("Téléphone", str(client.phone_number))
-        table.add_row("Entreprise", client.enterprise)
-        table.add_row("Commercial", commercial)
-        table.add_row("Date de création", create_date)
-        table.add_row("Dernière mise à jour", update_date)
-
-        # Affichage du tableau
-        console.print(table)
-
-    def display_clients(self, clients: List[Client]) -> List[Dict]:
-        """
-        Affiche une liste de clients.
-
-        Args:
-            clients (List[Client]): La liste des clients à afficher
-
-        Returns:
-            List[Dict]: Les informations des clients formatées
-        """
-        return [self.display_client(client) for client in clients]
-
-    def create_client(self, db: Session, token: str, client_data: Dict) -> Dict:
-        """
-        Crée un nouveau client.
-
-        Args:
-            db (Session): La session de base de données
-            token (str): Le token JWT
-            client_data (Dict): Les données du client
-
-        Returns:
-            Dict: Les informations du client créé ou un message d'erreur
-        """
-        # Vérification des données obligatoires
-        required_fields = ["fullname", "email", "phone_number", "enterprise"]
-        for field in required_fields:
-            if field not in client_data:
-                return {"error": f"Le champ '{field}' est obligatoire."}
-
-        # Création du client - sales_contact_id sera assigné automatiquement par le contrôleur
-        client = self.controller.create(token, db, client_data)
-        if not client:
-            return {
-                "error": "Vous n'avez pas la permission de créer un client ou le token est invalide."
-            }
-
-        return {"message": "Client créé avec succès.", "client": self.display_client(client)}
-
-    def get_client(self, db: Session, token: str, client_id: int) -> Dict:
-        """
-        Récupère un client par son ID.
-
-        Args:
-            db (Session): La session de base de données
-            token (str): Le token JWT
-            client_id (int): L'ID du client
-
-        Returns:
-            Dict: Les informations du client ou un message d'erreur
-        """
-        client = self.controller.get(token, db, client_id)
-        if not client:
-            return {
-                "error": "Client non trouvé ou vous n'avez pas la permission d'accéder à ce client."
-            }
-
-        return {"client": self.display_client(client)}
-
-    def get_all_clients(self, db: Session, token: str, skip: int = 0, limit: int = 100) -> Dict:
-        """
-        Récupère tous les clients.
-
-        Args:
-            db (Session): La session de base de données
-            token (str): Le token JWT
-            skip (int): Nombre de clients à sauter
-            limit (int): Nombre maximum de clients à retourner
-
-        Returns:
-            Dict: La liste des clients ou un message d'erreur
-        """
-        clients = self.controller.get_all(db, token, skip, limit)
-
-        return {
-            "clients": self.display_clients(clients) if clients else [],
-            "count": len(clients) if clients else 0,
-        }
-
-    def get_my_clients(self, db: Session, token: str) -> Dict:
-        """
-        Récupère tous les clients gérés par l'utilisateur connecté.
-
-        Args:
-            db (Session): La session de base de données
-            token (str): Le token JWT
-
-        Returns:
-            Dict: La liste des clients ou un message d'erreur
-        """
-        clients = self.controller.get_clients_by_commercial(token, db)
-        if not clients:
-            return {
-                "message": "Aucun client trouvé ou vous n'avez pas la permission d'accéder aux clients."
-            }
-
-        return {"clients": self.display_clients(clients), "count": len(clients)}
-
-    def update_client(self, db: Session, token: str, client_id: int, client_data: Dict) -> Dict:
-        """
-        Met à jour un client.
-
-        Args:
-            db (Session): La session de base de données
-            token (str): Le token JWT
-            client_id (int): L'ID du client
-            client_data (Dict): Les nouvelles données
-
-        Returns:
-            Dict: Les informations du client mis à jour ou un message d'erreur
-        """
-        client = self.controller.update(token, db, client_id, client_data)
-        if not client:
-            return {
-                "error": "Client non trouvé, vous n'avez pas la permission de mettre à jour ce client ou le token est invalide."
-            }
-
-        return {"message": "Client mis à jour avec succès.", "client": self.display_client(client)}
-
-    def delete_client(self, db: Session, token: str, client_id: int) -> Dict:
-        """
-        Supprime un client.
-
-        Args:
-            db (Session): La session de base de données
-            token (str): Le token JWT
-            client_id (int): L'ID du client
-
-        Returns:
-            Dict: Un message de succès ou d'erreur
-        """
-        success = self.controller.delete(token, db, client_id)
-        if not success:
-            return {
-                "error": "Client non trouvé, vous n'avez pas la permission de supprimer ce client ou le token est invalide."
-            }
-
-        return {"message": "Client supprimé avec succès."}

@@ -70,8 +70,7 @@ class EventDAO(BaseDAO[Event]):
         Returns:
             List[Event]: Liste des événements liés au commercial
         """
-        # Cette méthode nécessite généralement une jointure avec les tables Contract et Client
-        # Voici une implémentation simplifiée qui suppose que les relations sont correctement définies
+        # Cette méthode nécessite une jointure avec les tables Contract et Client
         stmt = (
             select(self.model)
             .join(self.model.contract)
@@ -114,26 +113,6 @@ class EventDAO(BaseDAO[Event]):
             return None
         return self.update(db, event, {"notes": notes})
 
-    def assign_support_contact(
-        self, db: Session, event_id: int, support_contact_id: int
-    ) -> Optional[Event]:
-        """
-        Assigne un contact support à un événement existant.
-
-        Args:
-            db (Session): La session de base de données
-            event_id (int): L'ID de l'événement
-            support_contact_id (int): L'ID du contact support
-
-        Returns:
-            Event or None: L'événement mis à jour ou None si non trouvé
-        """
-        event = self.get(db, event_id)
-        if not event:
-            return None
-
-        return self.update(db, event, {"support_contact_id": support_contact_id})
-
     def create_event(self, db: Session, event_data: Dict) -> Optional[Event]:
         """
         Crée un nouvel événement avec les informations du client récupérées automatiquement.
@@ -173,30 +152,23 @@ class EventDAO(BaseDAO[Event]):
             location=event_data["location"],
             attendees=event_data.get("attendees", 0),
             notes=event_data.get("notes", ""),
-            support_contact_id=event_data.get("support_contact_id")
+            support_contact_id=event_data.get("support_contact_id"),
         )
 
-        db.add(event)
-        db.commit()
-        db.refresh(event)
-        return event
-
-    def create(self, db: Session, event_data: Dict) -> Event:
-        """Crée un nouvel événement"""
-        event = Event(
-            contract_id=event_data["contract_id"],
-            start_event=event_data["start_event"],
-            end_event=event_data["end_event"],
-            location=event_data["location"],
-            attendees=event_data.get("attendees", 0),
-            notes=event_data.get("notes", ""),
-            name=event_data.get("name", ""),
-        )
         db.add(event)
         db.commit()
         db.refresh(event)
         return event
 
     def get(self, db: Session, event_id: int) -> Optional[Event]:
-        """Récupère un événement par son ID"""
+        """
+        Récupère une entité Événement par son ID.
+
+        Args:
+            db (Session): La session de base de données
+            event_id (int): L'ID de l'entité Événement
+
+        Returns:
+            Optional[Event]: L'entité Événement si trouvée, None sinon
+        """
         return db.query(Event).filter(Event.id == event_id).first()

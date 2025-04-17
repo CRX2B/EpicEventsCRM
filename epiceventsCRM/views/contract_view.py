@@ -6,6 +6,7 @@ from rich.table import Table
 
 from epiceventsCRM.controllers.contract_controller import ContractController
 from epiceventsCRM.views.base_view import BaseView, console
+from epiceventsCRM.utils.permissions import PermissionError
 
 
 class ContractView(BaseView):
@@ -61,22 +62,60 @@ class ContractView(BaseView):
                 )
                 return
 
-            success, result = contract_view.controller.create_contract(
-                token, db, client, amount, signed
-            )
+            # Préparer le dictionnaire de données pour le contrôleur
+            contract_data = {
+                "client_id": client,
+                "amount": amount,
+                "status": signed,
+            }
 
-            if success:
+            try:
+                created_contract = contract_view.controller.create(
+                    token=token, db=db, data=contract_data
+                )
+
+                if created_contract:
+                    console.print(
+                        Panel.fit(
+                            f"[bold green]Contrat {created_contract.id} créé avec succès.[/bold green]",
+                            border_style="green",
+                        )
+                    )
+                    contract_view.display_item(created_contract)
+                else:
+                    # L'échec peut être dû à une permission refusée (levée par le décorateur)
+                    # ou à une autre erreur (client non trouvé, commercial manquant, etc.)
+                    # Le contrôleur log les détails avec Sentry/capture_message
+                    console.print(
+                        Panel.fit(
+                            f"[bold red]Échec de la création du contrat.[/bold red]\nVérifiez les informations fournies (ID client) et vos permissions.",
+                            title="Erreur de Création",
+                            border_style="red",
+                        )
+                    )
+            except PermissionError as e:
                 console.print(
                     Panel.fit(
-                        f"[bold green]Contrat {result.id} créé avec succès.[/bold green]",
-                        border_style="green",
+                        f"[bold red]Permission refusée:[/bold red]\n{e.message}",
+                        title="Erreur d'Autorisation",
+                        border_style="red",
                     )
                 )
-                contract_view.display_item(result)
-            else:
+            except (
+                ValueError
+            ) as e:  # Capturer les erreurs de valeur potentielles (ex: client non trouvé)
                 console.print(
                     Panel.fit(
-                        f"[bold red]Échec de la création du contrat: {result}[/bold red]",
+                        f"[bold red]Erreur de données:[/bold red]\n{str(e)}",
+                        title="Erreur de Création",
+                        border_style="red",
+                    )
+                )
+            except Exception as e:
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Erreur inattendue lors de la création :[/bold red]\n{str(e)}",
+                        title="Erreur Inattendue",
                         border_style="red",
                     )
                 )
@@ -85,9 +124,15 @@ class ContractView(BaseView):
         @click.argument("id", type=int)
         @click.option("--amount", "-a", type=float, help="Montant du contrat")
         @click.option("--remaining-amount", "-r", type=float, help="Montant restant du contrat")
-        @click.option("--signed/--unsigned", is_flag=True, default=None, help="Statut signé du contrat")
+        @click.option(
+            "--signed/--unsigned",
+            "status",
+            is_flag=True,
+            default=None,
+            help="Statut signé du contrat",
+        )
         @click.pass_context
-        def update_contract(ctx, id, amount, remaining_amount, signed):
+        def update_contract(ctx, id, amount, remaining_amount, status):
             """Met à jour un contrat existant."""
             db = get_session()
             token = get_token()
@@ -100,108 +145,56 @@ class ContractView(BaseView):
                 )
                 return
 
-            # Vérifier qu'au moins une option est fournie
-            if amount is None and remaining_amount is None and signed is None:
+            if amount is None and remaining_amount is None and status is None:
                 console.print(
                     Panel.fit(
-                        "[bold yellow]Veuillez spécifier au moins une valeur à mettre à jour (montant, montant restant ou statut).[/bold yellow]",
+                        "[bold yellow]Aucune donnée à mettre à jour.[/bold yellow]",
                         border_style="yellow",
                     )
                 )
                 return
 
-            # Préparer les données de mise à jour
             update_data = {}
             if amount is not None:
                 update_data["amount"] = amount
             if remaining_amount is not None:
                 update_data["remaining_amount"] = remaining_amount
-            if signed is not None:
-                update_data["status"] = signed
+            if status is not None:
+                update_data["status"] = status
 
-            # Effectuer la mise à jour
-            contract = contract_view.controller.update_contract(token, db, id, update_data)
-            if contract:
-                # Afficher les messages de succès pour chaque mise à jour effectuée
-                if "amount" in update_data:
+            try:
+                contract = contract_view.controller.update_contract(token, db, id, update_data)
+                if contract:
                     console.print(
                         Panel.fit(
-                            f"[bold green]Montant du contrat {id} mis à jour avec succès: {amount}.[/bold green]",
+                            f"[bold green]Contrat {id} mis à jour avec succès.[/bold green]",
                             border_style="green",
                         )
                     )
-                if "remaining_amount" in update_data:
+                    contract_view.display_item(contract)
+                else:
                     console.print(
                         Panel.fit(
-                            f"[bold green]Montant restant du contrat {id} mis à jour avec succès: {remaining_amount}.[/bold green]",
-                            border_style="green",
+                            f"[bold red]Échec de la mise à jour du contrat {id}. Vérifiez l'ID et vos permissions.[/bold red]",
+                            border_style="red",
                         )
                     )
-                if "status" in update_data:
-                    status_txt = "signé" if signed else "non signé"
-                    console.print(
-                        Panel.fit(
-                            f"[bold green]Statut du contrat {id} mis à jour avec succès: {status_txt}.[/bold green]",
-                            border_style="green",
-                        )
+            except PermissionError as e:
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Permission refusée:[/bold red]\n{e.message}",
+                        title="Erreur d'Autorisation",
+                        border_style="red",
                     )
-            else:
-                # Récupération des informations pour un message plus détaillé
-                from epiceventsCRM.database import get_session as get_db_session
-                from epiceventsCRM.models.models import Contract, User
-                from epiceventsCRM.utils.token_manager import decode_token
-
-                # Message d'erreur détaillé
-                error_message = f"[bold red]Échec de la mise à jour du contrat {id}.[/bold red]\n\n"
-
-                try:
-                    db_local = get_db_session()
-                    payload = decode_token(token)
-
-                    # Vérifier si le token est valide
-                    if not payload or "sub" not in payload or "department" not in payload:
-                        error_message += "[red]Token invalide ou informations manquantes[/red]"
-                    else:
-                        user_id = payload["sub"]
-                        department = payload["department"]
-
-                        # Récupérer les informations du contrat
-                        contract_obj = db_local.query(Contract).filter(Contract.id == id).first()
-
-                        if not contract_obj:
-                            error_message += f"[red]Le contrat {id} n'existe pas.[/red]"
-                        else:
-                            # Récupérer le nom de l'utilisateur
-                            user = db_local.query(User).filter(User.id == user_id).first()
-                            user_name = user.fullname if user else f"ID: {user_id}"
-
-                            # Récupérer le commercial associé au contrat
-                            contract_commercial = (
-                                db_local.query(User)
-                                .filter(User.id == contract_obj.sales_contact_id)
-                                .first()
-                            )
-                            commercial_name = (
-                                contract_commercial.fullname if contract_commercial else "inconnu"
-                            )
-
-                            # Explication selon le département
-                            if department.lower() == "commercial":
-                                if contract_obj.sales_contact_id != user_id:
-                                    error_message += f"[red]Vous ({user_name}) n'êtes pas le commercial associé à ce contrat.[/red]\n"
-                                    error_message += f"[red]Seul le commercial associé ({commercial_name}) ou un membre du département gestion peut modifier ce contrat.[/red]"
-                                else:
-                                    error_message += "[red]Une erreur inconnue s'est produite. Cette action a été signalée.[/red]"
-                            else:
-                                error_message += f"[red]Votre département ({department}) n'a pas les permissions nécessaires pour cette action.[/red]\n"
-                                error_message += "[red]Seuls le commercial associé au contrat ou les membres du département gestion peuvent le modifier.[/red]"
-                except Exception as e:
-                    error_message += f"[red]Erreur lors de la vérification: {str(e)}[/red]"
-                finally:
-                    if "db_local" in locals():
-                        db_local.close()
-
-                console.print(Panel.fit(error_message, border_style="red"))
+                )
+            except Exception as e:
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Erreur lors de la mise à jour :[/bold red]\n{str(e)}",
+                        title="Erreur Inattendue",
+                        border_style="red",
+                    )
+                )
 
         @contract.command("by-client")
         @click.argument("client_id", type=int)
@@ -350,7 +343,7 @@ class ContractView(BaseView):
             finally:
                 db.close()
 
-            # Affichage des informations dans un panneau élégant
+            # Affichage des informations.
             panel = Panel(
                 contract_info,
                 title=f"[bold yellow]Contrat #{contract.id}[/bold yellow]",

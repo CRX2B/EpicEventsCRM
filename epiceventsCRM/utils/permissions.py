@@ -25,6 +25,7 @@ DEPARTMENT_PERMISSIONS = {
         "delete_client",
         "update_contract",  # Uniquement pour les contrats de ses clients
         "create_event",
+        "update_event",
         # Permissions communes
         *COMMON_PERMISSIONS,
     },
@@ -44,7 +45,7 @@ DEPARTMENT_PERMISSIONS = {
         "update_contract",
         "delete_contract",
         "update_event",  # Pour attribuer un support
-        "delete_event",  # Permission pour supprimer un événement
+        "delete_event",
         # Permissions communes
         *COMMON_PERMISSIONS,
     },
@@ -111,10 +112,12 @@ def require_permission(permission_template: str):
             if "{entity_name}" in permission_template and hasattr(self, "entity_name"):
                 permission = permission_template.format(entity_name=self.entity_name)
 
-            # Récupérer le token - généralement le premier ou le deuxième argument après self
+            # Récupérer le token - Vérifie args[0] ou args[1] ou kwargs
             token = None
             if len(args) >= 1 and isinstance(args[0], str):
                 token = args[0]
+            elif len(args) >= 2 and isinstance(args[1], str):
+                token = args[1]
             elif "token" in kwargs:
                 token = kwargs["token"]
 

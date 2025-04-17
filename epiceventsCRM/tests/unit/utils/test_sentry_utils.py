@@ -1,8 +1,13 @@
 import os
 import pytest
+import sentry_sdk
 from unittest.mock import patch, MagicMock
 
-from epiceventsCRM.utils.sentry_utils import capture_exception, set_user_context, capture_message
+from epiceventsCRM.utils.sentry_utils import (
+    capture_exception,
+    set_user_context,
+    capture_message,
+)
 
 
 class TestException(Exception):
@@ -22,6 +27,75 @@ def mock_env_sentry_dsn(monkeypatch):
 def mock_env_no_sentry_dsn(monkeypatch):
     """Supprime la variable d'environnement SENTRY_DSN."""
     monkeypatch.delenv("SENTRY_DSN", raising=False)
+
+
+@patch("sentry_sdk.capture_exception")
+def test_capture_exception_decorator(mock_sentry_capture):
+    """Teste que le décorateur capture_exception appelle sentry_sdk et relève l'exception."""
+
+    @capture_exception
+    def function_that_raises():
+        raise ValueError("Test error")
+
+    with pytest.raises(ValueError) as excinfo:
+        function_that_raises()
+
+    assert "Test error" in str(excinfo.value)
+    mock_sentry_capture.assert_called_once()
+    # Vérifier que l'exception passée à Sentry est bien celle levée
+    call_args, _ = mock_sentry_capture.call_args
+    assert isinstance(call_args[0], ValueError)
+    assert str(call_args[0]) == "Test error"
+
+
+@patch("sentry_sdk.set_user")
+def test_set_user_context(mock_sentry_set_user):
+    """Teste que set_user_context appelle sentry_sdk.set_user avec les bonnes données."""
+    user_info = {"user_id": "user123", "email": "user@example.com", "username": "testuser"}
+    set_user_context(**user_info)
+    mock_sentry_set_user.assert_called_once_with(
+        {"id": "user123", "email": "user@example.com", "username": "testuser"}
+    )
+
+
+@patch("sentry_sdk.capture_message")
+@patch("sentry_sdk.flush")
+@patch("sentry_sdk.push_scope")  # Pusher scope pour gérer les extras
+def test_capture_message_simple(mock_push_scope, mock_flush, mock_sentry_capture):
+    """Teste l'envoi d'un message simple à Sentry."""
+    mock_scope = MagicMock()
+    mock_push_scope.return_value.__enter__.return_value = mock_scope
+
+    message = "Test message"
+    level = "warning"
+
+    capture_message(message, level=level)
+
+    mock_sentry_capture.assert_called_once_with(message, level=level)
+    mock_scope.set_extra.assert_not_called()  # Pas d'extras dans ce test
+    mock_flush.assert_called_once()
+
+
+@patch("sentry_sdk.capture_message")
+@patch("sentry_sdk.flush")
+@patch("sentry_sdk.push_scope")
+def test_capture_message_with_extra(mock_push_scope, mock_flush, mock_sentry_capture):
+    """Teste l'envoi d'un message à Sentry avec des données supplémentaires."""
+    mock_scope = MagicMock()
+    mock_push_scope.return_value.__enter__.return_value = mock_scope
+
+    message = "Another test message"
+    level = "error"
+    extra_data = {"request_id": "abc-123", "details": "More info"}
+
+    capture_message(message, level=level, extra=extra_data)
+
+    mock_sentry_capture.assert_called_once_with(message, level=level)
+    # Vérifier que set_extra a été appelé pour chaque élément dans extra_data
+    mock_scope.set_extra.assert_any_call("request_id", "abc-123")
+    mock_scope.set_extra.assert_any_call("details", "More info")
+    assert mock_scope.set_extra.call_count == 2
+    mock_flush.assert_called_once()
 
 
 def test_capture_exception_with_sentry_dsn(mock_env_sentry_dsn):

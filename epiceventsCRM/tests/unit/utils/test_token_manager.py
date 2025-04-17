@@ -1,115 +1,113 @@
 import json
 import os
+from unittest.mock import patch, mock_open, call
+
 import pytest
 import jwt
 
 from epiceventsCRM.utils.token_manager import (
-    TOKEN_FILE,
     save_token,
     get_token,
     clear_token,
-    decode_token,
-    generate_token,
+    TOKEN_FILE,
 )
 
 
 @pytest.fixture
-def mock_token_file(monkeypatch, tmp_path):
-    """Fixture qui redéfinit TOKEN_FILE vers un chemin temporaire."""
-    token_file = tmp_path / ".token"
-    monkeypatch.setattr("epiceventsCRM.utils.token_manager.TOKEN_FILE", str(token_file))
-    return token_file
+def mock_token_file(monkeypatch):
+    # Ce fixture n'est plus nécessaire
+    pass
 
 
-def test_save_token(mock_token_file):
-    """Test de la sauvegarde du token."""
-    test_token = "test.jwt.token"
+# Tests pour save_token
+def test_save_token(mocker):
+    """Vérifie que save_token appelle open et json.dump correctement."""
+    mock_file_handle = mock_open().return_value  # Obtenir le handle mocké
+    mock_open_func = mocker.patch("builtins.open", return_value=mock_file_handle)
+    mock_json_dump = mocker.patch("json.dump")
+    test_token = "mon_token_test"
+    expected_data = {"token": test_token}
+
     save_token(test_token)
 
-    # Vérifier que le fichier existe et contient le bon token
-    assert os.path.exists(mock_token_file)
-    with open(mock_token_file, "r") as file:
-        data = json.load(file)
-        assert data.get("token") == test_token
+    # Vérifier que open a été appelé pour écrire dans le bon fichier
+    mock_open_func.assert_called_once_with(TOKEN_FILE, "w")
+    # Vérifier que json.dump a été appelé avec les bonnes données et le handle
+    mock_json_dump.assert_called_once_with(expected_data, mock_file_handle)
 
 
-def test_get_token(mock_token_file):
-    """Test de la récupération du token."""
-    # Cas où le fichier n'existe pas
-    if os.path.exists(mock_token_file):
-        os.remove(mock_token_file)
-    assert get_token() is None
+# Tests pour get_token
+def test_get_token_exists(mocker):
+    """Vérifie que get_token lit et retourne le token si le fichier existe."""
+    test_token = "mon_token_test"
+    file_content = json.dumps({"token": test_token})
+    mock_file = mock_open(read_data=file_content)
+    mocker.patch("builtins.open", mock_file)
+    mocker.patch("os.path.exists", return_value=True)
 
-    # Cas où le fichier existe
-    test_token = "valid.jwt.token"
-    with open(mock_token_file, "w") as file:
-        json.dump({"token": test_token}, file)
+    token = get_token()
 
-    assert get_token() == test_token
-
-
-def test_get_token_invalid_json(mock_token_file):
-    """Test de la récupération du token avec un JSON invalide."""
-    with open(mock_token_file, "w") as file:
-        file.write("Invalid JSON")
-
-    assert get_token() is None
+    os.path.exists.assert_called_once_with(TOKEN_FILE)
+    mock_file.assert_called_once_with(TOKEN_FILE, "r")
+    assert token == test_token
 
 
-def test_clear_token(mock_token_file):
-    """Test de la suppression du token."""
-    # Créer un fichier de token
-    with open(mock_token_file, "w") as file:
-        json.dump({"token": "test.token"}, file)
+def test_get_token_not_exists(mocker):
+    """Vérifie que get_token retourne None si le fichier n'existe pas."""
+    mocker.patch("os.path.exists", return_value=False)
+    mock_file = mocker.patch("builtins.open")  # Pour s'assurer qu'il n'est pas appelé
 
-    # Vérifier que le fichier existe
-    assert os.path.exists(mock_token_file)
+    token = get_token()
 
-    # Supprimer le token
+    os.path.exists.assert_called_once_with(TOKEN_FILE)
+    mock_file.assert_not_called()
+    assert token is None
+
+
+def test_get_token_invalid_json(mocker):
+    """Vérifie que get_token retourne None si le fichier contient du JSON invalide."""
+    mock_file = mock_open(read_data="pas du json")
+    mocker.patch("builtins.open", mock_file)
+    mocker.patch("os.path.exists", return_value=True)
+
+    token = get_token()
+
+    os.path.exists.assert_called_once_with(TOKEN_FILE)
+    mock_file.assert_called_once_with(TOKEN_FILE, "r")
+    assert token is None
+
+
+def test_get_token_file_not_found_on_read(mocker):
+    """Vérifie la gestion de FileNotFoundError lors de la lecture."""
+    # Simule que le fichier existe au début mais disparaît avant lecture
+    mocker.patch("os.path.exists", return_value=True)
+    mock_open_func = mocker.patch("builtins.open", side_effect=FileNotFoundError)
+
+    token = get_token()
+
+    os.path.exists.assert_called_once_with(TOKEN_FILE)
+    mock_open_func.assert_called_once_with(TOKEN_FILE, "r")
+    assert token is None
+
+
+# Tests pour clear_token
+def test_clear_token_exists(mocker):
+    """Vérifie que clear_token supprime le fichier s'il existe."""
+    mocker.patch("os.path.exists", return_value=True)
+    mock_remove = mocker.patch("os.remove")
+
     clear_token()
 
-    # Vérifier que le fichier n'existe plus
-    assert not os.path.exists(mock_token_file)
+    os.path.exists.assert_called_once_with(TOKEN_FILE)
+    mock_remove.assert_called_once_with(TOKEN_FILE)
 
 
-def test_clear_token_no_file(mock_token_file):
-    """Test de la suppression du token quand le fichier n'existe pas."""
-    if os.path.exists(mock_token_file):
-        os.remove(mock_token_file)
+def test_clear_token_not_exists(mocker):
+    """Vérifie que clear_token ne fait rien si le fichier n'existe pas."""
+    mocker.patch("os.path.exists", return_value=False)
+    mock_remove = mocker.patch("os.remove")
 
-    # Vérifier que l'appel ne lève pas d'exception
     clear_token()
-    assert not os.path.exists(mock_token_file)
 
-
-def test_decode_token():
-    """Test du décodage d'un token valide."""
-    # Création d'un token valide
-    payload = {"user_id": 42, "department": "commercial"}
-    token = jwt.encode(payload, "secret", algorithm="HS256")
-
-    # Décodage du token
-    decoded = decode_token(token)
-    assert decoded is not None
-    assert decoded["user_id"] == 42
-    assert decoded["department"] == "commercial"
-
-
-def test_decode_token_invalid():
-    """Test du décodage d'un token invalide."""
-    assert decode_token("invalid.token") is None
-
-
-def test_generate_token():
-    """Test de la génération d'un token."""
-    user_id = 123
-    department = "support"
-
-    token = generate_token(user_id, department)
-    assert isinstance(token, str)
-
-    # Décodage du token pour vérifier son contenu
-    decoded = decode_token(token)
-    assert decoded is not None
-    assert decoded["sub"] == user_id
-    assert decoded["department"] == department
+    os.path.exists.assert_called_once_with(TOKEN_FILE)
+    mock_remove.assert_not_called()

@@ -19,19 +19,6 @@ class ClientDAO(BaseDAO[Client]):
         """
         super().__init__(Client)
 
-    def get_by_email(self, db: Session, email: str) -> Optional[Client]:
-        """
-        Récupère un client par son email.
-
-        Args:
-            db (Session): La session de base de données
-            email (str): L'email du client
-
-        Returns:
-            Optional[Client]: Le client si trouvé, None sinon
-        """
-        return db.query(Client).filter(Client.email == email).first()
-
     def get_by_sales_contact(self, db: Session, sales_contact_id: int) -> List[Client]:
         """
         Récupère tous les clients gérés par un commercial.
@@ -87,13 +74,27 @@ class ClientDAO(BaseDAO[Client]):
         return self.update(db, client, client_data)
 
     def create(self, db: Session, client_data: Dict) -> Client:
-        """Crée un nouveau client"""
+        """
+        Crée une nouvelle entité Client.
+
+        Args:
+            db (Session): La session de base de données
+            client_data (Dict): Les données du client à créer, doit contenir
+                                fullname, email, phone_number, enterprise, sales_contact_id,
+                                et potentiellement create_date, update_date
+
+        Returns:
+            Client: L'entité Client créée
+        """
         client = Client(
             fullname=client_data["fullname"],
             email=client_data["email"],
             phone_number=client_data["phone_number"],
             enterprise=client_data["enterprise"],
             sales_contact_id=client_data["sales_contact_id"],
+            # Utiliser les dates si présentes dans le dictionnaire
+            create_date=client_data.get("create_date"),
+            update_date=client_data.get("update_date"),
         )
         db.add(client)
         db.commit()
@@ -101,5 +102,14 @@ class ClientDAO(BaseDAO[Client]):
         return client
 
     def get(self, db: Session, client_id: int) -> Optional[Client]:
-        """Récupère un client par son ID"""
+        """
+        Récupère une entité Client par son ID.
+
+        Args:
+            db (Session): La session de base de données
+            client_id (int): L'ID de l'entité Client
+
+        Returns:
+            Optional[Client]: L'entité Client si trouvée, None sinon
+        """
         return db.query(Client).filter(Client.id == client_id).first()

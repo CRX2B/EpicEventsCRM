@@ -6,7 +6,8 @@ from epiceventsCRM.controllers.base_controller import BaseController
 from epiceventsCRM.dao.client_dao import ClientDAO
 from epiceventsCRM.models.models import Client
 from epiceventsCRM.utils.permissions import require_permission
-from epiceventsCRM.utils.token_manager import decode_token
+from epiceventsCRM.utils.auth import verify_token
+from epiceventsCRM.utils.sentry_utils import capture_exception, capture_message
 
 
 class ClientController(BaseController[Client]):
@@ -33,8 +34,7 @@ class ClientController(BaseController[Client]):
         Returns:
             List[Client]: Liste des clients du commercial
         """
-        # Récupérer l'ID de l'utilisateur depuis le token
-        payload = decode_token(token)
+        payload = verify_token(token)
         if not payload or "sub" not in payload:
             return []
 
@@ -61,33 +61,22 @@ class ClientController(BaseController[Client]):
         if not client:
             return None
 
-        # Vérifier si le commercial actuel est l'utilisateur qui fait la requête (pour les commerciaux)
-        payload = decode_token(token)
+        payload = verify_token(token)
         if not payload or "sub" not in payload or "department" not in payload:
             return None
 
         user_id = payload["sub"]
         department = payload["department"]
 
-        # Si c'est un commercial, il ne peut modifier que ses propres clients
         if department == "commercial" and client.sales_contact_id != user_id:
+            capture_message(
+                f"Tentative non autorisée de MAJ commercial {commercial_id} pour client {client_id} par user {user_id}",
+                level="warning",
+            )
             return None
 
         # Mise à jour du commercial
         return self.dao.update_commercial(db, client, commercial_id)
-
-    def check_permission(self, token: str, permission: str) -> bool:
-        """
-        Vérifie si l'utilisateur a la permission spécifiée.
-
-        Args:
-            token (str): Le token JWT
-            permission (str): La permission à vérifier
-
-        Returns:
-            bool: True si l'utilisateur a la permission, False sinon
-        """
-        return self.auth_controller.check_permission(token, permission)
 
     @require_permission("create_client")
     def create(self, token: str, db: Session, client_data: Dict) -> Optional[Client]:
@@ -104,10 +93,12 @@ class ClientController(BaseController[Client]):
         """
         try:
             # Récupération des informations de l'utilisateur depuis le token
-            payload = self.auth_controller.decode_token(token)
+            payload = verify_token(token)
 
             if not payload or "sub" not in payload:
-                print("Erreur: payload invalide ou 'sub' (user_id) manquant")
+                capture_message(
+                    "Tentative de création de client avec token invalide", level="error"
+                )
                 return None
 
             # Attribution du commercial (l'utilisateur connecté) au client
@@ -117,20 +108,21 @@ class ClientController(BaseController[Client]):
             required_fields = ["fullname", "email", "phone_number", "enterprise"]
             for field in required_fields:
                 if field not in client_data:
-                    print(f"Erreur: champ obligatoire manquant: {field}")
+                    capture_message(f"Erreur: champ obligatoire manquant: {field}", level="error")
                     return None
 
             # Appeler la méthode create_client du DAO qui définit les dates automatiquement
             client = self.dao.create_client(db, client_data)
             if not client:
-                print("Erreur: création du client échouée")
+                capture_message("Erreur: création du client échouée", level="error")
                 return None
 
             return client
         except Exception as e:
-            print(f"Erreur lors de la création du client: {str(e)}")
+            capture_exception(e)
             return None
 
+    @require_permission("read_client")
     def get_client(self, db: Session, token: str, client_id: int) -> Optional[Client]:
         """
         Récupère un client par son ID.
@@ -143,12 +135,9 @@ class ClientController(BaseController[Client]):
         Returns:
             Optional[Client]: Le client si trouvé et si la permission est accordée, None sinon
         """
-        # Tous les utilisateurs peuvent lire les clients
-        if not self.check_permission(token, "read_client"):
-            return None
-
         return self.dao.get(db, client_id)
 
+    @require_permission("read_client")
     def get_all_clients(
         self, db: Session, token: str, skip: int = 0, limit: int = 100
     ) -> List[Client]:
@@ -164,12 +153,9 @@ class ClientController(BaseController[Client]):
         Returns:
             List[Client]: Liste des clients si la permission est accordée, liste vide sinon
         """
-        # Tous les utilisateurs peuvent lire les clients
-        if not self.check_permission(token, "read_client"):
-            return []
-
         return self.dao.get_all(db, skip=skip, limit=limit)
 
+    @require_permission("read_client")
     def get_my_clients(self, db: Session, token: str) -> List[Client]:
         """
         Récupère tous les clients gérés par l'utilisateur connecté.
@@ -181,18 +167,19 @@ class ClientController(BaseController[Client]):
         Returns:
             List[Client]: Liste des clients gérés par l'utilisateur
         """
-        # Vérification des permissions
-        if not self.check_permission(token, "read_client"):
-            return []
-
         # Récupération des informations de l'utilisateur depuis le token
-        user_info = self.auth_controller.verify_token(token)
+        user_info = verify_token(token)
         if not user_info or "sub" not in user_info:
+            capture_message(
+                "Token invalide ou 'sub' manquant dans get_my_clients après vérification permission",
+                level="warning",
+            )
             return []
 
         # Récupération des clients gérés par l'utilisateur
         return self.dao.get_by_sales_contact(db, user_info["sub"])
 
+    @require_permission("update_client")
     def update_client(
         self, db: Session, token: str, client_id: int, client_data: Dict
     ) -> Optional[Client]:
@@ -208,16 +195,13 @@ class ClientController(BaseController[Client]):
         Returns:
             Optional[Client]: Le client mis à jour si la permission est accordée, None sinon
         """
-        if not self.check_permission(token, "update_client"):
-            return None
-
         # Vérification que le client existe
         client = self.dao.get(db, client_id)
         if not client:
             return None
 
-        # Vérification que l'utilisateur est bien le commercial du client
-        user_info = self.auth_controller.verify_token(token)
+        # Vérification métier spécifique : le commercial ne modifie que ses clients
+        user_info = verify_token(token)
         if (
             not user_info
             or "sub" not in user_info
@@ -226,10 +210,15 @@ class ClientController(BaseController[Client]):
                 and user_info.get("department") != "gestion"
             )
         ):
+            capture_message(
+                f"Tentative non autorisée de MAJ client {client_id} par user {user_info.get('sub')}",
+                level="warning",
+            )
             return None
 
         return self.dao.update_client(db, client_id, client_data)
 
+    @require_permission("delete_client")
     def delete_client(self, db: Session, token: str, client_id: int) -> bool:
         """
         Supprime un client.
@@ -242,16 +231,13 @@ class ClientController(BaseController[Client]):
         Returns:
             bool: True si le client a été supprimé et si la permission est accordée, False sinon
         """
-        if not self.check_permission(token, "delete_client"):
-            return False
-
         # Vérification que le client existe
         client = self.dao.get(db, client_id)
         if not client:
             return False
 
-        # Vérification que l'utilisateur est bien le commercial du client
-        user_info = self.auth_controller.verify_token(token)
+        # Vérification métier spécifique : le commercial ne supprime que ses clients
+        user_info = verify_token(token)
         if (
             not user_info
             or "sub" not in user_info
@@ -260,26 +246,10 @@ class ClientController(BaseController[Client]):
                 and user_info.get("department") != "gestion"
             )
         ):
+            capture_message(
+                f"Tentative non autorisée de suppression client {client_id} par user {user_info.get('sub')}",
+                level="warning",
+            )
             return False
 
         return self.dao.delete(db, client_id)
-
-    # Méthodes pour compatibilité avec la vue
-    def list_clients(self, token: str) -> tuple:
-        """
-        Liste tous les clients accessibles par l'utilisateur
-
-        Args:
-            token: Token JWT de l'utilisateur
-
-        Returns:
-            tuple: (succès, liste des clients ou message d'erreur)
-        """
-        if not self.session:
-            return False, "Session de base de données non disponible"
-
-        try:
-            clients = self.get_all_clients(self.session, token)
-            return True, clients
-        except Exception as e:
-            return False, str(e)

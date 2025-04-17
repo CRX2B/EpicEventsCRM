@@ -4,11 +4,14 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from sqlalchemy.exc import IntegrityError
 
 from epiceventsCRM.controllers.event_controller import EventController
 from epiceventsCRM.views.base_view import BaseView
+from epiceventsCRM.utils.auth import verify_token
+from epiceventsCRM.utils.permissions import PermissionError
 
-# Création d'une instance de console Rich pour l'affichage
+
 console = Console()
 
 
@@ -79,17 +82,40 @@ class EventView(BaseView):
                 "notes": notes or "",
             }
 
-            event = event_view.controller.create(token, db, event_data)
+            try:
+                event = event_view.controller.create(token, db, event_data)
 
-            if event:
-                console.print(
-                    Panel.fit(f"[bold green]Événement {event.id} créé avec succès.[/bold green]")
-                )
-                event_view.display_item(event)
-            else:
+                # Si l'événement est retourné (pas d'exception), c'est un succès
+                if event:
+                    console.print(
+                        Panel.fit(
+                            f"[bold green]Événement {event.id} créé avec succès.[/bold green]"
+                        )
+                    )
+                    event_view.display_item(event)
+                else:
+                    console.print(
+                        Panel.fit(
+                            f"[bold red]Échec de la création de l'événement (raison inconnue).[/bold red]",
+                            border_style="red",
+                        )
+                    )
+            except (PermissionError, ValueError, IntegrityError) as e:
+                # Capturer les erreurs spécifiques attendues (Permission, Données invalides, Contrainte BDD)
                 console.print(
                     Panel.fit(
-                        "[bold red]Échec de la création de l'événement. Vérifiez vos permissions.[/bold red]"
+                        f"[bold red]Échec de la création:[/bold red]\n{e}",  # Afficher directement le message de l'exception
+                        title="Erreur",
+                        border_style="red",
+                    )
+                )
+            except Exception as e:
+                # Capturer toute autre exception inattendue
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Erreur lors de la création :[/bold red]\n{str(e)}",
+                        title="Erreur Inattendue",
+                        border_style="red",
                     )
                 )
 
@@ -122,7 +148,7 @@ class EventView(BaseView):
                 event_data["location"] = location
             if attendees:
                 event_data["attendees"] = attendees
-            if notes is not None:  # Permettre de vider les notes
+            if notes is not None:
                 event_data["notes"] = notes
 
             if not event_data:
@@ -131,17 +157,36 @@ class EventView(BaseView):
                 )
                 return
 
-            event = event_view.controller.update(token, db, id, event_data)
-
-            if event:
-                console.print(
-                    Panel.fit(f"[bold green]Événement {id} mis à jour avec succès.[/bold green]")
-                )
-                event_view.display_item(event)
-            else:
+            try:
+                event = event_view.controller.update(token, db, id, event_data)
+                if event:
+                    console.print(
+                        Panel.fit(
+                            f"[bold green]Événement {id} mis à jour avec succès.[/bold green]"
+                        )
+                    )
+                    event_view.display_item(event)
+                else:
+                    console.print(
+                        Panel.fit(
+                            f"[bold red]Échec de la mise à jour de l'événement {id}. Vérifiez l'ID et vos permissions.[/bold red]",
+                            border_style="red",
+                        )
+                    )
+            except PermissionError as e:
                 console.print(
                     Panel.fit(
-                        f"[bold red]Échec de la mise à jour de l'événement {id}. Vérifiez l'ID et vos permissions.[/bold red]"
+                        f"[bold red]Permission refusée:[/bold red]\n{e.message}",
+                        title="Erreur d'Autorisation",
+                        border_style="red",
+                    )
+                )
+            except Exception as e:
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Erreur lors de la mise à jour :[/bold red]\n{str(e)}",
+                        title="Erreur Inattendue",
+                        border_style="red",
                     )
                 )
 
@@ -158,19 +203,37 @@ class EventView(BaseView):
                 console.print(Panel.fit("[bold red]Veuillez vous connecter d'abord.[/bold red]"))
                 return
 
-            event = event_view.controller.update_event_notes(token, db, id, notes)
+            try:
+                updated_event = event_view.controller.update_event_notes(token, db, id, notes)
 
-            if event:
+                if updated_event:
+                    console.print(
+                        Panel.fit(
+                            f"[bold green]Notes de l'événement {id} mises à jour avec succès.[/bold green]"
+                        )
+                    )
+                    console.print(f"[bold]Nouvelles notes:[/bold] {updated_event.notes}")
+                else:
+                    console.print(
+                        Panel.fit(
+                            f"[bold red]Échec de la mise à jour des notes de l'événement {id}. Événement non trouvé ?[/bold red]",
+                            border_style="red",
+                        )
+                    )
+            except PermissionError as e:
                 console.print(
                     Panel.fit(
-                        f"[bold green]Notes de l'événement {id} mises à jour avec succès.[/bold green]"
+                        f"[bold red]Permission refusée:[/bold red]\n{e.message}",
+                        title="Erreur d'Autorisation",
+                        border_style="red",
                     )
                 )
-                console.print(f"[bold]Nouvelles notes:[/bold] {event.notes}")
-            else:
+            except Exception as e:
                 console.print(
                     Panel.fit(
-                        f"[bold red]Échec de la mise à jour des notes de l'événement {id}. Vérifiez l'ID et vos permissions.[/bold red]"
+                        f"[bold red]Erreur lors de la mise à jour des notes :[/bold red]\n{str(e)}",
+                        title="Erreur Inattendue",
+                        border_style="red",
                     )
                 )
 
@@ -187,19 +250,36 @@ class EventView(BaseView):
                 console.print(Panel.fit("[bold red]Veuillez vous connecter d'abord.[/bold red]"))
                 return
 
-            event = event_view.controller.update_event_support(token, db, id, support_id)
-
-            if event:
+            try:
+                event = event_view.controller.update_event_support(token, db, id, support_id)
+                if event:
+                    console.print(
+                        Panel.fit(
+                            f"[bold green]Contact support {support_id} assigné à l'événement {id} avec succès.[/bold green]"
+                        )
+                    )
+                    event_view.display_item(event)
+                else:
+                    console.print(
+                        Panel.fit(
+                            f"[bold red]Échec de l'assignation du contact support à l'événement {id}. Vérifiez les IDs et vos permissions.[/bold red]",
+                            border_style="red",
+                        )
+                    )
+            except PermissionError as e:
                 console.print(
                     Panel.fit(
-                        f"[bold green]Contact support {support_id} assigné à l'événement {id} avec succès.[/bold green]"
+                        f"[bold red]Permission refusée:[/bold red]\n{e.message}",
+                        title="Erreur d'Autorisation",
+                        border_style="red",
                     )
                 )
-                event_view.display_item(event)
-            else:
+            except Exception as e:
                 console.print(
                     Panel.fit(
-                        f"[bold red]Échec de l'assignation du contact support à l'événement {id}. Vérifiez les IDs et vos permissions.[/bold red]"
+                        f"[bold red]Erreur lors de l'assignation du support :[/bold red]\n{str(e)}",
+                        title="Erreur Inattendue",
+                        border_style="red",
                     )
                 )
 
@@ -230,7 +310,7 @@ class EventView(BaseView):
         @event.command("my-events")
         @click.pass_context
         def my_events(ctx):
-            """Liste les événements dont je suis le support (pour le support)."""
+            """Liste les événements assignés au support connecté."""
             db = get_session()
             token = get_token()
 
@@ -238,90 +318,39 @@ class EventView(BaseView):
                 console.print(Panel.fit("[bold red]Veuillez vous connecter d'abord.[/bold red]"))
                 return
 
-            events = event_view.controller.get_events_by_support(token, db)
-
-            if not events:
-                console.print(
-                    Panel.fit("[bold yellow]Vous n'êtes assigné à aucun événement.[/bold yellow]")
-                )
-                return
-
-            event_view.display_items(events)
-
-        @event.command("delete-event")
-        @click.argument("id", type=int)
-        @click.confirmation_option(prompt="Êtes-vous sûr de vouloir supprimer ce event ?")
-        @click.pass_context
-        def delete_event(ctx, id):
-            """Supprime un événement."""
-            db = get_session()
-            token = get_token()
-
-            if not token:
-                console.print(
-                    Panel.fit(
-                        "[bold red]Veuillez vous connecter d'abord.[/bold red]",
-                        border_style="red"
-                    )
-                )
-                return
-
             try:
-                # Vérifier si l'événement existe
-                event = event_view.controller.get_event(token, db, id)
-                if not event:
+                events = event_view.controller.get_events_by_support(token, db)
+
+                if not events:
                     console.print(
                         Panel.fit(
-                            f"[bold red]L'événement {id} n'existe pas ou vous n'avez pas les permissions pour y accéder.[/bold red]",
-                            border_style="red"
-                        )
-                    )
-                    return
-
-                # Tenter la suppression
-                success = event_view.controller.delete_event(token, db, id)
-
-                if success:
-                    console.print(
-                        Panel.fit(
-                            f"[bold green]Événement {id} supprimé avec succès.[/bold green]",
-                            border_style="green"
+                            "[bold yellow]Aucun événement ne vous est assigné.[/bold yellow]",
+                            border_style="yellow",
                         )
                     )
                 else:
-                    # Message d'erreur détaillé selon le département
-                    payload = decode_token(token)
-                    department = payload.get("department", "").lower() if payload else ""
-                    
-                    error_message = f"[bold red]Échec de la suppression de l'événement {id}.[/bold red]\n\n"
-                    
-                    if department == "commercial":
-                        error_message += "[red]• Vous êtes membre du département commercial[/red]\n"
-                        error_message += "[red]• Seuls les membres du département gestion peuvent supprimer des événements[/red]"
-                    elif department == "support":
-                        error_message += "[red]• Vous êtes membre du département support[/red]\n"
-                        error_message += "[red]• Seuls les membres du département gestion peuvent supprimer des événements[/red]"
-                    else:
-                        error_message += "[red]• Vous n'avez pas les permissions nécessaires pour supprimer des événements[/red]"
-                    
-                    console.print(
-                        Panel.fit(
-                            error_message,
-                            border_style="red"
-                        )
-                    )
+                    event_view.display_items(events)
 
+            except PermissionError as e:
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Permission refusée:[/bold red]\n{e.message}",
+                        title="Erreur d'Autorisation",
+                        border_style="red",
+                    )
+                )
             except Exception as e:
                 console.print(
                     Panel.fit(
-                        f"[bold red]Une erreur inattendue s'est produite :[/bold red]\n{str(e)}",
-                        border_style="red"
+                        f"[bold red]Erreur lors de la récupération des événements :[/bold red]\n{str(e)}",
+                        title="Erreur Inattendue",
+                        border_style="red",
                     )
                 )
 
     def display_items(self, events: List[Any]):
         """
-        Affiche une liste d'événements.
+        Affiche une liste d'événements sous forme de tableau avec Rich.
 
         Args:
             events (List[Any]): La liste des événements à afficher
@@ -411,54 +440,3 @@ class EventView(BaseView):
 
         # Affichage du tableau
         console.print(table)
-
-    def create_get_command(self) -> Callable:
-        """
-        Crée une commande pour obtenir un événement par son ID.
-
-        Returns:
-            Callable: La fonction de commande
-        """
-
-        @click.command(f"get-{self.entity_name}")
-        @click.argument("id", type=int)
-        @click.pass_context
-        def get_item(ctx, id):
-            """Obtient un événement par son ID."""
-            db = ctx.obj["get_session"]()
-            token = ctx.obj["get_token"]()
-
-            # Vérifier si l'utilisateur est connecté
-            if not token:
-                console.print(
-                    Panel.fit(
-                        f"[bold red]Vous devez être connecté pour voir un {self.entity_name}.[/bold red]\n"
-                        f"[red]Utilisez la commande 'auth login' pour vous connecter.[/red]",
-                        border_style="red",
-                    )
-                )
-                return
-
-            try:
-                item = self.controller.get_event(token, db, id)
-
-                if not item:
-                    console.print(
-                        Panel.fit(
-                            f"[bold red]{self.entity_name.capitalize()} {id} non trouvé.[/bold red]",
-                            border_style="red",
-                        )
-                    )
-                    return
-
-                self.display_item(item)
-            except Exception as e:
-                console.print(
-                    Panel.fit(
-                        f"[bold red]Erreur lors de la récupération du {self.entity_name} {id}:[/bold red]\n"
-                        f"[red]{str(e)}[/red]",
-                        border_style="red",
-                    )
-                )
-
-        return get_item

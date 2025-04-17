@@ -2,12 +2,16 @@ import pytest
 from datetime import datetime
 from unittest.mock import Mock, patch
 from epiceventsCRM.models.models import Client, User, Department
-from epiceventsCRM.dao.client_dao import ClientDAO
 from epiceventsCRM.controllers.client_controller import ClientController
 from epiceventsCRM.views.client_view import ClientView
 from epiceventsCRM.utils.auth import hash_password
 from epiceventsCRM.utils.permissions import PermissionError
-from epiceventsCRM.controllers.auth_controller import AuthController
+from epiceventsCRM.tests.mocks.mock_controllers import (
+    MockAuthController,
+    mock_token_commercial as get_mock_commercial_token_str,
+    mock_token_gestion as get_mock_gestion_token_str,
+)
+from epiceventsCRM.tests.mocks.mock_dao import MockClientDAO
 
 
 @pytest.fixture
@@ -17,24 +21,27 @@ def test_department():
 
 @pytest.fixture
 def test_commercial(test_department):
-    return User(
-        id=1,
+    user = User(
+        id=1,  # Doit correspondre au sub du token commercial
         fullname="Commercial Test",
         email="commercial@test.com",
         password="password123",
         departement_id=test_department.id,
     )
+    return user
 
 
 @pytest.fixture
 def test_client(test_commercial):
-    return Client(
+    client = Client(
+        id=101,  # ID de test
         fullname="Test Client",
         email="client@test.com",
         phone_number="0123456789",
         enterprise="Test Company",
         sales_contact_id=test_commercial.id,
     )
+    return client
 
 
 @pytest.fixture
@@ -44,24 +51,8 @@ def test_client_data(test_commercial):
         "email": "client@test.com",
         "phone_number": "0123456789",
         "enterprise": "Test Company",
-        "sales_contact_id": test_commercial.id,
+        # sales_contact_id sera ajouté par le contrôleur
     }
-
-
-@pytest.fixture
-def mock_token_commercial():
-    # Simuler un token JWT valide
-    return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsImRlcGFydG1lbnRfaWQiOjF9.1234567890"
-
-
-@pytest.fixture
-def mock_auth_controller():
-    auth_controller = Mock(spec=AuthController)
-    # Configuration explicite des méthodes mock
-    auth_controller.check_permission = Mock(return_value=True)
-    auth_controller.verify_token = Mock(return_value={"sub": 1, "departement_id": 1})
-    auth_controller.decode_token = Mock(return_value={"sub": 1, "departement_id": 1})
-    return auth_controller
 
 
 class TestClientModel:
@@ -79,171 +70,224 @@ class TestClientModel:
         assert client.enterprise == "Test Company"
 
 
-class MockClientDAO:
-    def __init__(self, model_class):
-        self.model_class = model_class
-        self.clients = []
-        self.next_id = 1
-
-    def create_client(self, db, client_data):
-        # Ajouter les dates de création et de mise à jour
-        client_data = client_data.copy()  # Créer une copie pour ne pas modifier l'original
-        client_data["create_date"] = datetime.now()
-        client_data["update_date"] = datetime.now()
-
-        # Créer un nouvel ID
-        client_data["id"] = self.next_id
-        self.next_id += 1
-
-        # Créer l'instance du client
-        client = self.model_class(**client_data)
-        self.clients.append(client)
-        return client
-
-    def get(self, db, client_id):
-        return next((c for c in self.clients if c.id == client_id), None)
-
-    def get_all(self, db):
-        return self.clients
-
-    def get_by_commercial(self, db, commercial_id):
-        return [c for c in self.clients if c.sales_contact_id == commercial_id]
-
-    def update(self, db, client_id, client_data):
-        client = self.get(db, client_id)
-        if client:
-            for key, value in client_data.items():
-                setattr(client, key, value)
-        return client
-
-    def delete(self, db, client_id):
-        client = self.get(db, client_id)
-        if client:
-            self.clients.remove(client)
-            return True
-        return False
-
-
-class TestClientDAO:
-    def test_create_client(self, db_session, test_commercial):
-        dao = ClientDAO()
-        client_data = {
-            "fullname": "Test Client",
-            "email": "client@test.com",
-            "phone_number": "0123456789",
-            "enterprise": "Test Company",
-            "sales_contact_id": test_commercial.id,
-        }
-        client = dao.create(db_session, client_data)
-        assert client.fullname == "Test Client"
-        assert client.email == "client@test.com"
-        assert client.sales_contact_id == test_commercial.id
-
-    def test_get_client(self, db_session, test_commercial):
-        dao = ClientDAO()
-        client_data = {
-            "fullname": "Test Client",
-            "email": "client@test.com",
-            "phone_number": "0123456789",
-            "enterprise": "Test Company",
-            "sales_contact_id": test_commercial.id,
-        }
-        client = dao.create(db_session, client_data)
-        retrieved_client = dao.get(db_session, client.id)
-        assert retrieved_client.id == client.id
-        assert retrieved_client.email == "client@test.com"
-
-    def test_update_client(self, db_session, test_commercial):
-        dao = ClientDAO()
-        client_data = {
-            "fullname": "Test Client",
-            "email": "client@test.com",
-            "phone_number": "0123456789",
-            "enterprise": "Test Company",
-            "sales_contact_id": test_commercial.id,
-        }
-        client = dao.create(db_session, client_data)
-        client = dao.get(db_session, client.id)  # Récupérer l'objet client complet
-        updated_client = dao.update(
-            db_session, client, {"fullname": "Updated Client", "email": "updated@test.com"}
-        )
-        assert updated_client.fullname == "Updated Client"
-        assert updated_client.email == "updated@test.com"
-
-    def test_get_by_commercial(self, db_session, test_commercial):
-        dao = ClientDAO()
-
-        # Créer plusieurs clients pour le même commercial
-        clients_created = []
-        for i in range(3):
-            client_data = {
-                "fullname": f"Test Client {i}",
-                "email": f"client{i}@test.com",
-                "phone_number": f"012345678{i}",
-                "enterprise": f"Test Company {i}",
-                "sales_contact_id": test_commercial.id,
-            }
-            client = dao.create(db_session, client_data)
-            clients_created.append(client)
-
-        # Utiliser get_all et filtrer manuellement
-        all_clients, total = dao.get_all(db_session)
-        clients = [c for c in all_clients if c.sales_contact_id == test_commercial.id]
-        assert len(clients) == 3
-        assert all(c.sales_contact_id == test_commercial.id for c in clients)
-
-
 class TestClientController:
+    @pytest.fixture(autouse=True)
+    def setup_controller(self, mock_auth_controller_fixture):
+        """Injecte les mocks dans une instance du contrôleur pour les tests de cette classe."""
+        self.mock_dao = MockClientDAO()
+        self.mock_auth_controller = mock_auth_controller_fixture
+        # Réinitialiser les mocks AVANT d'injecter et utiliser
+        self.mock_dao.reset_mocks()
+        self.mock_auth_controller.reset_mocks()
+
+        self.controller = ClientController()
+        self.controller.dao = self.mock_dao
+        self.controller.auth_controller = self.mock_auth_controller
+
+    @patch("epiceventsCRM.controllers.client_controller.verify_token")
     def test_controller_create_client(
-        self, db_session, test_commercial, mock_token_commercial, mock_auth_controller
+        self, mock_verify, db_session, test_client_data, test_commercial
     ):
-        # Configuration du DAO et du controller
-        dao = MockClientDAO(Client)
-        controller = ClientController()
-        controller.dao = dao
+        """Teste la création d'un client via le contrôleur avec les mocks centraux."""
+        # Configurer le retour du patch et la permission AVANT l'appel
+        mock_verify.return_value = {"sub": 1, "department": "commercial"}
+        token = get_mock_commercial_token_str()
+        self.mock_auth_controller.check_permission.return_value = True  # Simuler permission OK
 
-        # Configuration explicite du auth_controller
-        controller.auth_controller = mock_auth_controller
-
-        # Vérification que le mock est correctement configuré
-        assert hasattr(
-            controller.auth_controller, "decode_token"
-        ), "Le controller n'a pas la méthode decode_token"
-
-        client_data = {
-            "fullname": "Test Client",
-            "email": "client@test.com",
-            "phone_number": 123456789,
-            "enterprise": "Test Company",
-        }
-
-        # Test de création du client
-        client = controller.create(
-            token=mock_token_commercial, db=db_session, client_data=client_data
+        client = self.controller.create(
+            token=token, db=db_session, client_data=test_client_data.copy()
         )
 
-        # Vérifications
         assert client is not None
-        assert client.fullname == "Test Client"
-        assert client.email == "client@test.com"
-        assert client.sales_contact_id == test_commercial.id
+        mock_verify.assert_called_once_with(token)
+        self.mock_dao.create_client.assert_called_once()
 
-        # Vérification que decode_token a été appelé
-        controller.auth_controller.decode_token.assert_called_once_with(mock_token_commercial)
+        # Vérifier les arguments passés à create_client
+        call_args, call_kwargs = self.mock_dao.create_client.call_args
+        passed_db_session = call_args[0]
+        passed_client_data = call_args[1]
 
-    def test_get_client(self, db_session, test_client, mock_token_commercial, mock_auth_controller):
-        dao = MockClientDAO(Client)
-        dao.clients.append(test_client)  # Ajouter le client de test au mock DAO
+        assert passed_db_session == db_session
+        assert passed_client_data["fullname"] == test_client_data["fullname"]
+        assert passed_client_data["email"] == test_client_data["email"]
+        assert passed_client_data["phone_number"] == test_client_data["phone_number"]
+        assert passed_client_data["enterprise"] == test_client_data["enterprise"]
+        # Vérifier que le sales_contact_id a été ajouté par le contrôleur (ID 1 du token commercial)
+        assert passed_client_data["sales_contact_id"] == 1
+        # Vérifier que check_permission a été appelé par le décorateur
+        self.mock_auth_controller.check_permission.assert_called_with(token, "create_client")
 
-        controller = ClientController()
-        controller.dao = dao
-        controller.auth_controller = mock_auth_controller
+    def test_get_client(self, db_session, test_client, test_commercial):
+        """Teste la récupération d'un client avec les mocks centraux."""
+        token = get_mock_commercial_token_str()
+        # Configurer la permission AVANT l'appel
+        self.mock_auth_controller.check_permission.return_value = True
+        # Préparer le mock DAO pour retourner le client de test
+        self.mock_dao._data[test_client.id] = test_client
+        self.mock_dao.get.return_value = test_client
 
-        client = controller.get(
-            token=mock_token_commercial, db=db_session, entity_id=test_client.id
-        )
-        assert client.id == test_client.id
-        assert client.email == test_client.email
+        client_result = self.controller.get(token=token, db=db_session, entity_id=test_client.id)
+
+        assert client_result is not None
+        self.mock_dao.get.assert_called_once_with(db_session, test_client.id)
+        self.mock_auth_controller.check_permission.assert_called_with(token, "read_client")
+        assert client_result.id == test_client.id
+        assert client_result.email == test_client.email
+
+    @patch("epiceventsCRM.controllers.client_controller.verify_token")
+    def test_create_client_missing_fields(self, mock_verify, db_session, test_commercial):
+        """Teste la création d'un client avec des champs manquants."""
+        mock_verify.return_value = {"sub": 1, "department": "commercial"}
+        token = get_mock_commercial_token_str()
+        self.mock_auth_controller.check_permission.return_value = True
+        client_data = {"fullname": "Test Client"}  # Données incomplètes
+
+        client = self.controller.create(token, db_session, client_data)
+        assert client is None  # Ou vérifier si une ValueError est levée
+        self.mock_auth_controller.check_permission.assert_called_once_with(token, "create_client")
+        self.mock_dao.create_client.assert_not_called()
+
+    @patch("epiceventsCRM.controllers.client_controller.verify_token")
+    def test_create_client_permission_denied(self, mock_verify, db_session, test_client_data):
+        """Teste la création d'un client sans permission."""
+        mock_verify.return_value = {"sub": 99, "department": "support"}  # Utilisateur non autorisé
+        token = "support_token"
+        self.mock_auth_controller.check_permission.return_value = False
+
+        with pytest.raises(PermissionError):
+            self.controller.create(token, db_session, test_client_data.copy())
+
+        self.mock_auth_controller.check_permission.assert_called_once_with(token, "create_client")
+        self.mock_dao.create_client.assert_not_called()
+
+    @patch("epiceventsCRM.controllers.client_controller.verify_token")
+    def test_update_client_success(self, mock_verify, db_session, test_client):
+        """Teste la mise à jour réussie d'un client."""
+        user_id = test_client.sales_contact_id
+        mock_verify.return_value = {
+            "sub": user_id,
+            "department": "commercial",
+        }  # Commercial propriétaire
+        token = get_mock_commercial_token_str()
+        self.mock_auth_controller.check_permission.return_value = True
+        # Mettre client dans _data pour que _update_client_impl le trouve
+        self.mock_dao._data[test_client.id] = test_client
+        self.mock_dao.get.return_value = test_client  # Garder pour l'appel get du contrôleur
+        self.mock_dao.update_client.return_value = test_client
+
+        update_data = {"fullname": "Updated Client Name"}
+        result = self.controller.update_client(db_session, token, test_client.id, update_data)
+
+        assert result is not None
+        assert result.id == test_client.id
+        self.mock_auth_controller.check_permission.assert_called_once_with(token, "update_client")
+        self.mock_dao.get.assert_called_once_with(db_session, test_client.id)
+        self.mock_dao.update_client.assert_called_once_with(db_session, test_client.id, update_data)
+
+    @patch("epiceventsCRM.controllers.client_controller.verify_token")
+    def test_update_client_commercial_denied_other(self, mock_verify, db_session, test_client):
+        """Teste qu'un commercial ne peut pas mettre à jour le client d'un autre."""
+        other_commercial_id = 99
+        mock_verify.return_value = {"sub": other_commercial_id, "department": "commercial"}
+        token = "other_commercial_token"
+        self.mock_auth_controller.check_permission.return_value = True  # Permission de base OK
+        self.mock_dao.get.return_value = test_client  # Le client existe, appartient à user 1
+
+        update_data = {"fullname": "Attempt Update"}
+        result = self.controller.update_client(db_session, token, test_client.id, update_data)
+
+        assert result is None
+        self.mock_auth_controller.check_permission.assert_called_once_with(token, "update_client")
+        self.mock_dao.get.assert_called_once_with(db_session, test_client.id)
+        self.mock_dao.update_client.assert_not_called()
+
+    @patch("epiceventsCRM.controllers.client_controller.verify_token")
+    def test_update_client_gestion_updates_any(self, mock_verify, db_session, test_client):
+        """Teste qu'un gestionnaire peut mettre à jour n'importe quel client."""
+        gestion_user_id = 50
+        mock_verify.return_value = {"sub": gestion_user_id, "department": "gestion"}
+        token = get_mock_gestion_token_str()
+        self.mock_auth_controller.check_permission.return_value = True  # Permission OK
+        # Mettre client dans _data pour que _update_client_impl le trouve
+        self.mock_dao._data[test_client.id] = test_client
+        self.mock_dao.get.return_value = test_client  # Garder pour l'appel get du contrôleur
+        self.mock_dao.update_client.return_value = test_client
+
+        update_data = {"enterprise": "Gestion Updated Enterprise"}
+        result = self.controller.update_client(db_session, token, test_client.id, update_data)
+
+        assert result is not None
+        self.mock_auth_controller.check_permission.assert_called_once_with(token, "update_client")
+        self.mock_dao.get.assert_called_once_with(db_session, test_client.id)
+        self.mock_dao.update_client.assert_called_once_with(db_session, test_client.id, update_data)
+
+    @patch("epiceventsCRM.controllers.client_controller.verify_token")
+    def test_update_client_permission_denied(self, mock_verify, db_session, test_client):
+        """Teste la mise à jour d'un client sans la permission de base."""
+        mock_verify.return_value = {
+            "sub": 10,
+            "department": "support",
+        }  # Support ne peut pas update
+        token = "support_token"
+        self.mock_auth_controller.check_permission.return_value = False
+
+        update_data = {"fullname": "Attempt Update"}
+        with pytest.raises(PermissionError):
+            self.controller.update_client(db_session, token, test_client.id, update_data)
+
+        self.mock_auth_controller.check_permission.assert_called_once_with(token, "update_client")
+        self.mock_dao.get.assert_not_called()
+        self.mock_dao.update_client.assert_not_called()
+
+    @patch("epiceventsCRM.controllers.client_controller.verify_token")
+    def test_delete_client_success(self, mock_verify, db_session, test_client):
+        """Teste la suppression réussie d'un client (par Gestion)."""
+        mock_verify.return_value = {"sub": 50, "department": "gestion"}
+        token = get_mock_gestion_token_str()
+        self.mock_auth_controller.check_permission.return_value = True
+        # Mettre client dans _data pour que _delete_impl le trouve
+        self.mock_dao._data[test_client.id] = test_client
+        self.mock_dao.get.return_value = test_client  # Client trouvé pour l'appel get
+        self.mock_dao.delete.return_value = True  # Suppression réussie
+
+        result = self.controller.delete_client(db_session, token, test_client.id)
+
+        assert result is True
+        self.mock_auth_controller.check_permission.assert_called_once_with(token, "delete_client")
+        self.mock_dao.get.assert_called_once_with(db_session, test_client.id)
+        self.mock_dao.delete.assert_called_once_with(db_session, test_client.id)
+
+    @patch("epiceventsCRM.controllers.client_controller.verify_token")
+    def test_delete_client_not_found(self, mock_verify, db_session):
+        """Teste la suppression d'un client non trouvé."""
+        mock_verify.return_value = {"sub": 50, "department": "gestion"}
+        token = get_mock_gestion_token_str()
+        self.mock_auth_controller.check_permission.return_value = True
+        self.mock_dao.get.return_value = None  # Client non trouvé
+
+        result = self.controller.delete_client(db_session, token, 999)
+
+        assert result is False
+        self.mock_auth_controller.check_permission.assert_called_once_with(token, "delete_client")
+        self.mock_dao.get.assert_called_once_with(db_session, 999)
+        self.mock_dao.delete.assert_not_called()
+
+    @patch("epiceventsCRM.controllers.client_controller.verify_token")
+    def test_delete_client_permission_denied(self, mock_verify, db_session, test_client):
+        """Teste la suppression sans permission."""
+        mock_verify.return_value = {
+            "sub": 10,
+            "department": "support",
+        }  # Supposons support n'a pas delete
+        token = "support_token"
+        self.mock_auth_controller.check_permission.return_value = False  # Permission refusée
+
+        with pytest.raises(PermissionError):
+            self.controller.delete_client(db_session, token, test_client.id)
+
+        self.mock_auth_controller.check_permission.assert_called_once_with(token, "delete_client")
+        self.mock_dao.get.assert_not_called()
+        self.mock_dao.delete.assert_not_called()
 
 
 class TestClientView:

@@ -13,13 +13,13 @@ T = TypeVar("T")
 class BaseController(Generic[T]):
     """
     Contrôleur de base pour les opérations CRUD.
-    
+
     Cette classe abstraite fournit les fonctionnalités de base pour la gestion des entités :
     - Création
     - Lecture
     - Mise à jour
     - Suppression
-    
+
     Les classes dérivées doivent implémenter des méthodes spécifiques pour chaque entité.
     """
 
@@ -142,7 +142,8 @@ class BaseController(Generic[T]):
             entity = self.dao.get(db, entity_id)
             if not entity:
                 return None
-            return self.dao.update(db, entity, data)
+            updated_entity = self.dao.update(db, entity, data)
+            return updated_entity
         except PermissionError as e:
             capture_message(
                 f"Erreur de permission lors de la mise à jour du {self.entity_name} {entity_id}",
@@ -177,16 +178,3 @@ class BaseController(Generic[T]):
                 extra={"error": str(e)},
             )
             raise
-
-    @capture_exception
-    def format_permission(self, action: str) -> str:
-        """
-        Formate une permission en utilisant l'action et le nom de l'entité.
-
-        Args:
-            action: L'action (create, read, update, delete)
-
-        Returns:
-            La permission formatée
-        """
-        return f"{action}_{self.entity_name}"

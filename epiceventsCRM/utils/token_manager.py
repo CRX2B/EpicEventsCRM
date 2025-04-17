@@ -2,8 +2,6 @@ import json
 import os
 from typing import Any, Dict, Optional
 
-import jwt
-
 # Chemin du fichier contenant le token JWT
 TOKEN_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".token")
 
@@ -53,42 +51,3 @@ def clear_token() -> None:
     """
     if os.path.exists(TOKEN_FILE):
         os.remove(TOKEN_FILE)
-
-
-def decode_token(token: str) -> Optional[Dict[str, Any]]:
-    """
-    Décode un token JWT sans vérifier la signature.
-
-    Args:
-        token (str): Le token JWT à décoder
-
-    Returns:
-        Optional[Dict[str, Any]]: Le contenu du token s'il est valide, None sinon
-
-    Raises:
-        jwt.PyJWTError: Si le token est invalide
-        AttributeError: Si le token est mal formaté
-    """
-    try:
-        payload = jwt.decode(token, options={"verify_signature": False})
-        return payload
-    except (jwt.PyJWTError, AttributeError):
-        return None
-
-
-def generate_token(sub: int, department: str) -> str:
-    """
-    Génère un token JWT pour un utilisateur.
-
-    Args:
-        sub (int): ID de l'utilisateur
-        department (str): Département de l'utilisateur
-
-    Returns:
-        str: Le token JWT généré
-
-    Raises:
-        jwt.PyJWTError: Si la génération du token échoue
-    """
-    payload = {"sub": sub, "department": department}
-    return jwt.encode(payload, "secret_key_for_tests")

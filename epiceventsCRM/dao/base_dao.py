@@ -49,7 +49,7 @@ class BaseDAO(Generic[ModelType]):
         Returns:
             Tuple[List[ModelType], int]: (Liste des entités, nombre total d'entités)
         """
-        # Calcul du skip
+
         skip = (page - 1) * page_size
 
         # Récupération du nombre total d'éléments

@@ -1,80 +1,81 @@
 import pytest
 from unittest.mock import Mock, patch
-from epiceventsCRM.views.auth_view import AuthView
+from rich.console import Console
+from rich.panel import Panel
+from click.testing import CliRunner
+
+from epiceventsCRM.views.auth_view import AuthView, auth_controller, auth_view, login, logout
 from epiceventsCRM.controllers.auth_controller import AuthController
+from epiceventsCRM.models.models import User
 
 
 @pytest.fixture
-def mock_auth_controller():
-    """Fixture pour créer un mock du contrôleur d'authentification"""
+def mock_db():
+    return Mock()
+
+
+@pytest.fixture
+def mock_auth_controller_instance():
     return Mock(spec=AuthController)
 
 
 @pytest.fixture
-def auth_view(mock_auth_controller):
-    """Fixture pour créer une instance de AuthView avec un mock du contrôleur"""
-    return AuthView(mock_auth_controller)
+def mock_auth_view(mock_auth_controller_instance):
+    return AuthView(mock_auth_controller_instance)
 
 
 class TestAuthView:
-    """Tests unitaires pour la vue d'authentification"""
+    """Tests unitaires pour AuthView."""
 
-    def test_login_success(self, auth_view, mock_auth_controller):
-        """Test de la méthode login avec succès"""
-        # Configuration du mock
-        mock_auth_controller.login.return_value = {
-            "user": {"fullname": "Test User"},
-            "token": "test_token",
+    @patch("rich.prompt.Prompt.ask")
+    def test_login_success(
+        self, mock_ask, mock_db, mock_auth_controller_instance, mock_auth_view, capsys
+    ):
+        """Teste une connexion réussie via AuthView."""
+        mock_ask.side_effect = ["test@example.com", "password123"]
+        mock_auth_controller_instance.login.return_value = {
+            "token": "fake_token",
+            "user": {"id": 1, "fullname": "Test User", "department": "gestion"},
         }
 
-        # Mock des entrées utilisateur
-        with patch(
-            "epiceventsCRM.views.auth_view.Prompt.ask", side_effect=["test@test.com", "password123"]
-        ):
-            # Mock de la sauvegarde du token
-            with patch("epiceventsCRM.views.auth_view.save_token") as mock_save_token:
-                # Mock de la session de base de données
-                mock_db = Mock()
+        result = mock_auth_view.login(mock_db)
 
-                # Appel de la méthode login
-                result = auth_view.login(mock_db)
+        mock_ask.assert_any_call("Email")
+        mock_ask.assert_any_call("Mot de passe", password=True)
+        mock_auth_controller_instance.login.assert_called_once_with(
+            mock_db, "test@example.com", "password123"
+        )
+        assert result is not None
+        assert result["token"] == "fake_token"
+        captured = capsys.readouterr()
+        assert "Connexion réussie" in captured.out
+        assert "Bienvenue Test User" in captured.out
 
-                # Vérifications
-                assert result is not None
-                assert result["user"]["fullname"] == "Test User"
-                mock_auth_controller.login.assert_called_once_with(
-                    mock_db, "test@test.com", "password123"
-                )
-                mock_save_token.assert_called_once_with("test_token")
+    @patch("rich.prompt.Prompt.ask")
+    def test_login_failure(
+        self, mock_ask, mock_db, mock_auth_controller_instance, mock_auth_view, capsys
+    ):
+        """Teste une connexion échouée via AuthView."""
+        mock_ask.side_effect = ["test@example.com", "wrongpassword"]
+        mock_auth_controller_instance.login.return_value = None  # Échec de la connexion
 
-    def test_login_failure(self, auth_view, mock_auth_controller):
-        """Test de la méthode login avec échec"""
-        # Configuration du mock
-        mock_auth_controller.login.return_value = None
+        result = mock_auth_view.login(mock_db)
 
-        # Mock des entrées utilisateur
-        with patch(
-            "epiceventsCRM.views.auth_view.Prompt.ask",
-            side_effect=["test@test.com", "wrong_password"],
-        ):
-            # Mock de la session de base de données
-            mock_db = Mock()
+        mock_ask.assert_any_call("Email")
+        mock_ask.assert_any_call("Mot de passe", password=True)
+        mock_auth_controller_instance.login.assert_called_once_with(
+            mock_db, "test@example.com", "wrongpassword"
+        )
+        assert result is None
+        captured = capsys.readouterr()
+        assert "Échec de la connexion" in captured.out
 
-            # Appel de la méthode login
-            result = auth_view.login(mock_db)
+    @patch("epiceventsCRM.views.auth_view.clear_token")
+    def test_logout(self, mock_clear_token, mock_auth_view, capsys):
+        """Teste la déconnexion via AuthView."""
+        mock_auth_view.logout()
 
-            # Vérifications
-            assert result is None
-            mock_auth_controller.login.assert_called_once_with(
-                mock_db, "test@test.com", "wrong_password"
-            )
-
-    def test_logout(self, auth_view):
-        """Test de la méthode logout"""
-        # Mock de la suppression du token
-        with patch("epiceventsCRM.views.auth_view.clear_token") as mock_clear_token:
-            # Appel de la méthode logout
-            auth_view.logout()
-
-            # Vérification
-            mock_clear_token.assert_called_once()
+        mock_clear_token.assert_called_once()
+        captured = capsys.readouterr()
+        assert "Déconnexion" in captured.out
+        assert "Au revoir" in captured.out
