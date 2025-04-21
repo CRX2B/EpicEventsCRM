@@ -1,16 +1,14 @@
-from typing import Any, Callable, List, Tuple
+from typing import Any, Callable, List
 import math
 
 import click
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 from sqlalchemy.orm import Session
 
 from epiceventsCRM.controllers.base_controller import BaseController
 from epiceventsCRM.utils.permissions import PermissionError
 
-# Création d'une console Rich pour l'affichage
 console = Console()
 
 
@@ -76,7 +74,6 @@ class BaseView:
                 return
 
             try:
-                # Validation des paramètres de pagination
                 if page < 1:
                     console.print(
                         Panel.fit(
@@ -95,7 +92,6 @@ class BaseView:
                     )
                     return
 
-                # Récupération des éléments avec pagination
                 try:
                     items, total = self.controller.get_all(
                         token, db, page=page, page_size=page_size
@@ -110,28 +106,25 @@ class BaseView:
                         )
                         return
 
-                    # Calcul du nombre total de pages
                     total_pages = math.ceil(total / page_size)
 
-                    # Affichage des informations de pagination
                     console.print(f"\n[bold]Page {page} sur {total_pages}[/bold]")
                     console.print(f"Total: {total} {self.entity_name_plural}")
                     console.print(
-                        f"Affichage des éléments {((page-1)*page_size)+1} à {min(page*page_size, total)}"
+                        f"Affichage des éléments {((page - 1) * page_size) + 1} à {min(page * page_size, total)}"
                     )
 
-                    # Affichage des éléments
                     self.display_items(items)
 
                     # Affichage des commandes de navigation
                     if total_pages > 1:
                         console.print("\n[bold]Navigation:[/bold]")
                         if page > 1:
-                            console.print(f"Pour la page précédente: --page {page-1}")
+                            console.print(f"Pour la page précédente: --page {page - 1}")
                         if page < total_pages:
-                            console.print(f"Pour la page suivante: --page {page+1}")
+                            console.print(f"Pour la page suivante: --page {page + 1}")
                         console.print(
-                            f"Pour changer le nombre d'éléments par page: --page-size <nombre>"
+                            "Pour changer le nombre d'éléments par page: --page-size <nombre>"
                         )
 
                 except PermissionError as e:
@@ -261,7 +254,6 @@ class BaseView:
                     )
                     return
 
-                # Tenter la suppression
                 success = self.controller.delete(token, db, id)
 
                 if success:
@@ -283,7 +275,6 @@ class BaseView:
                         )
                     )
             except PermissionError as e:
-                # Affichage formaté de l'erreur de permission avec Rich
                 console.print(
                     Panel.fit(
                         f"[bold red]Permission refusée:[/bold red]\n{e.message}",
@@ -292,7 +283,6 @@ class BaseView:
                     )
                 )
             except Exception as e:
-                # Gestion des autres erreurs potentielles
                 console.print(
                     Panel.fit(
                         f"[bold red]Une erreur inattendue s'est produite lors de la suppression:[/bold red]\n{str(e)}",

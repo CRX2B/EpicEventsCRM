@@ -43,13 +43,11 @@ class AuthController:
             capture_message(f"Échec de connexion pour l'email: {email}", level="warning")
             return None
 
-        # Récupération du nom du département
         department_name = user.department.departement_name if user.department else None
         if not department_name:
             capture_message(f"Utilisateur sans département: {email}", level="error")
             return None
 
-        # Génération du token
         token = generate_token(user.id, department_name)
 
         # Définir le contexte utilisateur pour Sentry

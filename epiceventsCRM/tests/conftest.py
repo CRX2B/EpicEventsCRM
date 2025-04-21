@@ -58,7 +58,6 @@ def users(db_session, departments):
     """Crée plusieurs utilisateurs de test pour différents départements."""
     users = []
 
-    # Utilisateur commercial
     commercial_user = User(
         fullname="Commercial User",
         email="commercial@example.com",
@@ -68,7 +67,6 @@ def users(db_session, departments):
     db_session.add(commercial_user)
     users.append(commercial_user)
 
-    # Utilisateur support
     support_user = User(
         fullname="Support User",
         email="support@example.com",
@@ -78,7 +76,6 @@ def users(db_session, departments):
     db_session.add(support_user)
     users.append(support_user)
 
-    # Utilisateur gestion
     management_user = User(
         fullname="Management User",
         email="management@example.com",
@@ -104,7 +101,7 @@ def clients(db_session, users):
             phone_number=1234567890 + i,
             enterprise=f"Enterprise {i+1}",
             create_date=datetime.now(),
-            sales_contact_id=users[0].id,  # Associé au commercial
+            sales_contact_id=users[0].id,
         )
         db_session.add(client)
         clients.append(client)
@@ -124,8 +121,8 @@ def contracts(db_session, clients, users):
             amount=1000.0 * (i + 1),
             remaining_amount=500.0 * (i + 1),
             create_date=datetime.now(),
-            status=i % 2 == 0,  # Alternance entre True/False
-            sales_contact_id=users[0].id,  # Commercial
+            status=i % 2 == 0,
+            sales_contact_id=users[0].id,
         )
         db_session.add(contract)
         contracts.append(contract)
@@ -149,9 +146,7 @@ def events(db_session, contracts, clients, users):
             start_event=datetime.now() + timedelta(days=10),
             end_event=datetime.now() + timedelta(days=10, hours=8),
             location=f"Location {i+1}",
-            support_contact_id=(
-                users[1].id if i > 0 else None
-            ),  # Premier sans support, les autres avec
+            support_contact_id=(users[1].id if i > 0 else None),
             attendees=100 * (i + 1),
             notes=f"Notes for event {i+1}",
         )
@@ -178,9 +173,6 @@ def mock_token_support():
 def mock_token_gestion():
     """Token simulé pour un utilisateur de gestion."""
     return {"user_id": 3, "departement_id": 2, "department": "gestion"}
-
-
-# Nouvelles fixtures pour les tests de vues
 
 
 @pytest.fixture

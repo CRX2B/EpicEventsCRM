@@ -43,7 +43,6 @@ class ClientDAO(BaseDAO[Client]):
         Returns:
             Client: Le client créé
         """
-        # Ajout des dates de création
         if "create_date" not in client_data:
             client_data["create_date"] = datetime.now()
 
@@ -68,7 +67,6 @@ class ClientDAO(BaseDAO[Client]):
         if not client:
             return None
 
-        # Mise à jour de la date de modification
         client_data["update_date"] = datetime.now()
 
         return self.update(db, client, client_data)
@@ -92,7 +90,6 @@ class ClientDAO(BaseDAO[Client]):
             phone_number=client_data["phone_number"],
             enterprise=client_data["enterprise"],
             sales_contact_id=client_data["sales_contact_id"],
-            # Utiliser les dates si présentes dans le dictionnaire
             create_date=client_data.get("create_date"),
             update_date=client_data.get("update_date"),
         )

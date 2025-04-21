@@ -15,6 +15,7 @@ from epiceventsCRM.tests.mocks.mock_controllers import (
     MockAuthController,
 )
 from epiceventsCRM.utils.permissions import PermissionError
+from sqlalchemy.exc import IntegrityError
 
 
 @pytest.fixture
@@ -23,6 +24,7 @@ def test_support(db_session):
     department = Department(departement_name="support")
     db_session.add(department)
     db_session.commit()
+    db_session.refresh(department)
 
     user = User(
         fullname="Support Test",
@@ -32,20 +34,24 @@ def test_support(db_session):
     )
     db_session.add(user)
     db_session.commit()
+    db_session.refresh(user)
     return user
 
 
 @pytest.fixture
-def test_client(db_session):
+def test_client(db_session, test_support):
     """Fixture pour créer un client de test"""
     client = Client(
         fullname="Test Client",
         email="client@test.com",
-        phone_number=1234567890,
+        phone_number="1234567890",
         enterprise="Test Company",
+        create_date=datetime.now(),
+        sales_contact_id=test_support.id,
     )
     db_session.add(client)
     db_session.commit()
+    db_session.refresh(client)
     return client
 
 
@@ -53,25 +59,42 @@ def test_client(db_session):
 def test_contract(db_session, test_client):
     """Fixture pour créer un contrat de test"""
     contract = Contract(
-        client_id=test_client.id, amount=1000.00, remaining_amount=1000.00, status=False
+        client_id=test_client.id,
+        amount=1000.00,
+        remaining_amount=1000.00,
+        status=False,
+        create_date=datetime.now(),
+        sales_contact_id=test_client.sales_contact_id,
     )
     db_session.add(contract)
     db_session.commit()
+    db_session.refresh(contract)
     return contract
 
 
 @pytest.fixture
 def test_event_data(test_client, test_support, test_contract):
     """Fixture pour les données de test d'événement"""
+    now = datetime.now()
     return {
         "name": "Test Event",
-        "location": "Test Location",
         "contract_id": test_contract.id,
-        "start_event": datetime.now(),
-        "end_event": datetime.now() + timedelta(hours=2),
+        "client_id": test_contract.client_id,
+        "location": "Test Location",
+        "start_event": now + timedelta(days=1),
+        "end_event": now + timedelta(days=1, hours=2),
         "attendees": 50,
         "notes": "Test notes",
     }
+
+
+@pytest.fixture
+def test_event(db_session, test_event_data):
+    event = Event(**test_event_data)
+    db_session.add(event)
+    db_session.commit()
+    db_session.refresh(event)
+    return event
 
 
 class TestEventModel:
@@ -101,21 +124,17 @@ class TestEventDAO:
 
     def test_get_by_id(self, event_dao, db_session, test_event_data):
         """Test de récupération d'un événement par ID."""
-        # Créer un événement
         event = event_dao.create_event(db_session, test_event_data)
 
-        # Récupérer l'événement par ID
         retrieved_event = event_dao.get(db_session, event.id)
         assert retrieved_event is not None
         assert retrieved_event.location == event.location
 
-        # Tester avec un ID inexistant
         event = event_dao.get(db_session, 9999)
         assert event is None
 
     def test_get_all(self, event_dao, db_session, test_event_data):
         """Test de récupération de tous les événements."""
-        # Créer quelques événements
         event1 = event_dao.create_event(db_session, test_event_data)
 
         event_data2 = test_event_data.copy()
@@ -123,15 +142,12 @@ class TestEventDAO:
         event_data2["notes"] = "Different notes"
         event2 = event_dao.create_event(db_session, event_data2)
 
-        # Récupérer tous les événements
         all_events, total = event_dao.get_all(db_session)
         assert len(all_events) >= 2
 
-        # Tester la pagination
         page1, total = event_dao.get_all(db_session, page=1, page_size=2)
         assert len(page1) <= 2
 
-        # Nettoyage
         event_dao.delete(db_session, event1.id)
         event_dao.delete(db_session, event2.id)
 
@@ -150,7 +166,6 @@ class TestEventDAO:
             "notes": "Test notes creation",
         }
 
-        # Créer l'événement
         event = event_dao.create_event(db_session, event_data)
         assert event is not None
         assert event.contract_id == test_contract.id
@@ -160,16 +175,12 @@ class TestEventDAO:
 
     def test_update(self, event_dao, db_session, test_event_data):
         """Test de mise à jour d'un événement."""
-        # Créer un événement
         event = event_dao.create_event(db_session, test_event_data)
 
-        # Données de mise à jour
         update_data = {"location": "Updated Location", "attendees": 100}
 
-        # Mettre à jour l'événement
         updated_event = event_dao.update(db_session, event, update_data)
 
-        # Vérifier que l'événement a été mis à jour
         assert updated_event is not None
         assert updated_event.id == event.id
         assert updated_event.location == "Updated Location"
@@ -177,30 +188,22 @@ class TestEventDAO:
 
     def test_delete(self, event_dao, db_session, test_event_data):
         """Test de suppression d'un événement."""
-        # Créer un événement
         event = event_dao.create_event(db_session, test_event_data)
 
-        # Vérifier que l'événement existe avant la suppression
         assert event_dao.get(db_session, event.id) is not None
 
-        # Supprimer l'événement
         result = event_dao.delete(db_session, event.id)
 
-        # Vérifier que la suppression a réussi
         assert result is True
 
-        # Vérifier que l'événement n'existe plus
         assert event_dao.get(db_session, event.id) is None
 
     def test_get_by_contract(self, event_dao, db_session, test_contract, test_event_data):
         """Test de récupération des événements par contrat."""
-        # Créer un événement pour le contrat
         event = event_dao.create_event(db_session, test_event_data)
 
-        # Récupérer les événements du contrat
         contract_events = event_dao.get_by_contract(db_session, test_contract.id)
 
-        # Vérifier que les événements sont liés au contrat
         assert len(contract_events) > 0
         assert all(e.contract_id == test_contract.id for e in contract_events)
 
@@ -236,24 +239,19 @@ def setup_event_mocks(test_event_data, test_contract, test_support):
     mock_user_dao = MockUserDAO()
     mock_auth_controller = MockAuthController()
 
-    # Pré-peupler les mocks si nécessaire
     mock_contract_dao._data[test_contract.id] = test_contract
     mock_user_dao._data[test_support.id] = test_support
 
-    # Créer une instance du contrôleur avec les mocks
     event_controller = EventController()
     event_controller.dao = mock_event_dao
     event_controller.contract_dao = mock_contract_dao
     event_controller.user_dao = mock_user_dao
     event_controller.auth_controller = mock_auth_controller
 
-    # Cloner les données pour éviter les modifications accidentelles
     initial_event_data = test_event_data.copy()
-    initial_event_data["support_contact_id"] = test_support.id  # Assigner le support
-    mock_event = mock_event_dao._create_impl(
-        None, initial_event_data
-    )  # Utilise _create_impl pour peupler sans appeler le mock public
-    mock_event.id = 1  # Donner un ID fixe pour les tests
+    initial_event_data["support_contact_id"] = test_support.id
+    mock_event = mock_event_dao._create_impl(None, initial_event_data)
+    mock_event.id = 1
     mock_event_dao._data[mock_event.id] = mock_event
 
     return (
@@ -277,16 +275,14 @@ class TestEventController:
         mock_verify.return_value = {"sub": 1}
         token = get_mock_gestion_token_str()
         controller, dao, contract_dao, _, _, mock_auth = setup_event_mocks
-        mock_auth.check_permission.return_value = True  # Simuler permission OK
+        mock_auth.check_permission.return_value = True
 
-        # S'assurer que le contrat est marqué comme signé pour ce test
         contract = controller.contract_dao.get(db_session, test_event_data["contract_id"])
         contract.status = True
 
         event_data = test_event_data.copy()
         created_event = controller.create(token, db_session, event_data)
 
-        # Vérifier que l'événement a été créé
         assert created_event is not None
         assert isinstance(created_event, Event)
         mock_auth.check_permission.assert_called_with(token, "create_event")
@@ -300,18 +296,14 @@ class TestEventController:
         mock_verify.return_value = {"sub": 1}
         token = get_mock_gestion_token_str()
         controller, dao, _, _, _, mock_auth = setup_event_mocks
-        mock_auth.check_permission.return_value = (
-            True  # Simuler permission OK pour atteindre le code de la méthode
-        )
+        mock_auth.check_permission.return_value = True
 
-        # S'assurer que le contrat est marqué comme signé
         contract = controller.contract_dao.get(db_session, test_event_data["contract_id"])
         contract.status = True
 
         event_data_missing = test_event_data.copy()
         del event_data_missing["location"]
 
-        # Vérifier que ValueError est levé
         with pytest.raises(ValueError) as excinfo:
             controller.create(token, db_session, event_data_missing)
         assert "Champ obligatoire manquant: location" in str(excinfo.value)
@@ -324,14 +316,11 @@ class TestEventController:
         """Teste l'échec de création si le contrat n'est pas trouvé."""
         mock_verify.return_value = {"sub": 1}
         token = get_mock_gestion_token_str()
-        # Utiliser le contrôleur et les autres mocks de la fixture, mais créer un mock DAO contrat spécifique
         controller, dao, _, _, _, mock_auth = setup_event_mocks
         mock_auth.check_permission.return_value = True
 
-        # Créer un mock DAO contrat vierge pour ce test
         mock_contract_dao_specific = MockContractDAO()
-        mock_contract_dao_specific.get.return_value = None  # Configurer pour retourner None
-        # Assigner ce mock spécifique au contrôleur pour ce test
+        mock_contract_dao_specific.get.return_value = None
         controller.contract_dao = mock_contract_dao_specific
 
         event_data = test_event_data.copy()
@@ -341,7 +330,6 @@ class TestEventController:
         expected_error = f"Contrat avec ID {event_data['contract_id']} non trouvé"
         assert str(excinfo.value) == expected_error
         mock_auth.check_permission.assert_called_with(token, "create_event")
-        # Vérifier que le mock DAO spécifique a bien été appelé
         mock_contract_dao_specific.get.assert_called_once_with(
             db_session, event_data["contract_id"]
         )
@@ -357,7 +345,6 @@ class TestEventController:
         controller, dao, contract_dao, _, _, mock_auth = setup_event_mocks
         mock_auth.check_permission.return_value = True
 
-        # S'assurer que le contrat existe mais n'est PAS signé
         contract = controller.contract_dao.get(db_session, test_event_data["contract_id"])
         contract.status = False
 
@@ -376,7 +363,7 @@ class TestEventController:
         mock_verify.return_value = {"sub": test_support.id}
         token = get_mock_support_token_str()
         controller, dao, _, _, mock_event, mock_auth = setup_event_mocks
-        mock_auth.check_permission.return_value = True  # Simuler permission OK
+        mock_auth.check_permission.return_value = True
 
         dao.get_by_support.return_value = [mock_event]
 
@@ -394,11 +381,8 @@ class TestEventController:
         mock_verify.return_value = None
         token = "invalid_token"
         controller, dao, _, _, _, mock_auth = setup_event_mocks
-        mock_auth.check_permission.return_value = (
-            True  # Simuler permission OK pour atteindre le code
-        )
+        mock_auth.check_permission.return_value = True
 
-        # La méthode retourne une liste vide si le token est invalide dans la logique actuelle
         events = controller.get_events_by_support(token, db_session)
 
         assert events == []
@@ -411,9 +395,8 @@ class TestEventController:
         mock_verify.return_value = {"sub": test_support.id}
         token = get_mock_support_token_str()
         controller, dao, _, _, mock_event, mock_auth = setup_event_mocks
-        mock_auth.check_permission.return_value = True  # Simuler permission OK
+        mock_auth.check_permission.return_value = True
         event_id = mock_event.id
-        # Assigner le bon support ID à l'événement mocké
         mock_event.support_contact_id = test_support.id
         new_notes = "Notes mises à jour."
 
@@ -440,15 +423,13 @@ class TestEventController:
         mock_verify.return_value = {"sub": wrong_user_id}
         token = "other_user_token"
         controller, dao, _, _, mock_event, mock_auth = setup_event_mocks
-        mock_auth.check_permission.return_value = True  # Simuler permission OK
+        mock_auth.check_permission.return_value = True
         event_id = mock_event.id
-        # Assigner un ID de support différent à l'événement mocké
         mock_event.support_contact_id = 123
         new_notes = "Tentative de notes."
 
         dao.get.return_value = mock_event
 
-        # Vérifier que PermissionError est levée
         with pytest.raises(PermissionError) as excinfo:
             controller.update_event_notes(token, db_session, event_id, new_notes)
         assert "Vous n'êtes pas le support assigné" in str(excinfo.value)
@@ -462,16 +443,248 @@ class TestEventController:
         mock_verify.return_value = {"sub": 1}
         token = get_mock_support_token_str()
         controller, dao, _, _, _, mock_auth = setup_event_mocks
-        mock_auth.check_permission.return_value = True  # Simuler permission OK
+        mock_auth.check_permission.return_value = True
         event_id = 999
         new_notes = "Notes pour rien."
 
         dao.get.return_value = None
 
-        # La méthode retourne None si l'événement n'est pas trouvé
         result = controller.update_event_notes(token, db_session, event_id, new_notes)
 
         assert result is None
         mock_auth.check_permission.assert_called_with(token, "update_event")
         dao.get.assert_called_once_with(db_session, event_id)
         dao.update_notes.assert_not_called()
+
+    @patch("epiceventsCRM.controllers.event_controller.verify_token")
+    @patch("epiceventsCRM.controllers.event_controller.capture_exception")
+    @patch("epiceventsCRM.controllers.event_controller.ContractDAO")
+    def test_create_event_integrity_error(
+        self,
+        mock_ContractDAO,
+        mock_capture,
+        mock_verify,
+        db_session,
+        setup_event_mocks,
+        test_event_data,
+    ):
+        controller, mock_event_dao, _, mock_user_dao, _, mock_auth = setup_event_mocks
+
+        mock_contract_dao_instance = mock_ContractDAO.return_value
+        mock_signed_contract = Mock(spec=Contract, id=test_event_data["contract_id"], status=True)
+        mock_contract_dao_instance.get.return_value = mock_signed_contract
+
+        controller.dao = mock_event_dao
+        controller.contract_dao = mock_contract_dao_instance
+
+        mock_verify.return_value = {"sub": 1, "department": "commercial"}
+        token = "some_token"
+        mock_auth.check_permission.return_value = True
+
+        mock_event_dao.create_event.side_effect = IntegrityError(
+            "DB error", params={}, orig=Exception()
+        )
+
+        with pytest.raises(IntegrityError):
+            controller.create(token, db_session, test_event_data.copy())
+
+        mock_contract_dao_instance.get.assert_called_once_with(
+            db_session, test_event_data["contract_id"]
+        )
+        mock_event_dao.create_event.assert_called_once()
+        mock_capture.assert_called_once_with(mock_event_dao.create_event.side_effect)
+
+    @patch("epiceventsCRM.controllers.event_controller.verify_token")
+    def test_get_all_no_support_filter(self, mock_verify, setup_event_mocks):
+        """Teste get_all sans filtre spécifique au support."""
+        controller, mock_event_dao, _, _, _, mock_auth = setup_event_mocks
+        mock_auth.check_permission.return_value = True
+        token = get_mock_gestion_token_str()
+        mock_verify.return_value = {"sub": 1, "department": "gestion"}
+
+        mock_event = Mock(spec=Event)
+        mock_event_dao.get_all = Mock(return_value=([mock_event], 1))
+
+        events, total = controller.get_all(token, None)
+
+        assert total == 1
+        assert len(events) == 1
+        mock_event_dao.get_all.assert_called_once_with(None, page=1, page_size=10, filters=None)
+
+    @patch("epiceventsCRM.controllers.event_controller.verify_token")
+    def test_update_event_support_success_gestion(
+        self, mock_verify, db_session, setup_event_mocks, test_support
+    ):
+        controller, mock_event_dao, _, mock_user_dao, _, mock_auth = setup_event_mocks
+        mock_event = Mock(spec=Event, id=1)
+        mock_verify.return_value = {"sub": 99, "department": "gestion"}
+        token = get_mock_gestion_token_str()
+        mock_auth.check_permission.return_value = True
+        mock_event_dao.get.return_value = mock_event
+        mock_user_dao.get.return_value = test_support
+        mock_event_dao.update_support.return_value = mock_event
+
+        result = controller.update_event_support(token, db_session, 1, test_support.id)
+
+        assert result is not None
+        assert result.id == 1
+        assert result.support_contact_id == test_support.id
+        mock_auth.check_permission.assert_called_with(token, "update_event")
+        mock_event_dao.get.assert_called_once_with(db_session, 1)
+        mock_user_dao.get.assert_called_once_with(db_session, test_support.id)
+        mock_event_dao.update_support.assert_called_once_with(db_session, 1, test_support.id)
+
+    @patch("epiceventsCRM.controllers.event_controller.verify_token")
+    def test_update_event_support_fail_not_gestion(
+        self, mock_verify, db_session, setup_event_mocks, test_support
+    ):
+        controller, mock_event_dao, _, mock_user_dao, _, mock_auth = setup_event_mocks
+        mock_event = Mock(spec=Event, id=1)
+        mock_verify.return_value = {"sub": 1, "department": "commercial"}
+        token = "commercial_token"
+        mock_auth.check_permission.return_value = True
+        mock_event_dao.get.return_value = mock_event
+        mock_user_dao.get.return_value = test_support
+
+        result = controller.update_event_support(token, db_session, 1, test_support.id)
+
+        assert result is None
+        mock_auth.check_permission.assert_called_with(token, "update_event")
+        mock_event_dao.get.assert_called_once_with(db_session, 1)
+        mock_user_dao.get.assert_called_once_with(db_session, test_support.id)
+        mock_event_dao.update_support.assert_not_called()
+
+    @patch("epiceventsCRM.controllers.event_controller.verify_token")
+    def test_update_event_support_event_not_found(
+        self, mock_verify, db_session, setup_event_mocks, test_support
+    ):
+        controller, mock_event_dao, _, _, _, mock_auth = setup_event_mocks
+        mock_verify.return_value = {"sub": 99, "department": "gestion"}
+        token = get_mock_gestion_token_str()
+        mock_auth.check_permission.return_value = True
+        mock_event_dao.get.return_value = None
+
+        result = controller.update_event_support(token, db_session, 999, test_support.id)
+
+        assert result is None
+        mock_auth.check_permission.assert_called_with(token, "update_event")
+        mock_event_dao.get.assert_called_once_with(db_session, 999)
+        mock_event_dao.update_support.assert_not_called()
+
+    @patch("epiceventsCRM.controllers.event_controller.verify_token")
+    def test_update_event_support_support_user_not_found(
+        self, mock_verify, db_session, setup_event_mocks
+    ):
+        controller, mock_event_dao, _, mock_user_dao, _, mock_auth = setup_event_mocks
+        mock_event = Mock(spec=Event, id=1)
+        mock_verify.return_value = {"sub": 99, "department": "gestion"}
+        token = get_mock_gestion_token_str()
+        mock_auth.check_permission.return_value = True
+        mock_event_dao.get.return_value = mock_event
+        mock_user_dao.get.return_value = None
+
+        result = controller.update_event_support(token, db_session, 1, 999)
+
+        assert result is None
+        mock_auth.check_permission.assert_called_with(token, "update_event")
+        mock_event_dao.get.assert_called_once_with(db_session, 1)
+        mock_user_dao.get.assert_called_once_with(db_session, 999)
+        mock_event_dao.update_support.assert_not_called()
+
+    @patch("epiceventsCRM.controllers.event_controller.verify_token")
+    def test_update_event_notes_invalid_token(self, mock_verify, db_session, setup_event_mocks):
+        controller, mock_event_dao, _, _, _, mock_auth = setup_event_mocks
+        mock_event = Mock(spec=Event, id=1, support_contact_id=5)
+        mock_event_dao.get.return_value = mock_event
+        mock_auth.check_permission.return_value = True
+        mock_verify.return_value = None
+        token = "invalid_token"
+
+        with pytest.raises(PermissionError) as excinfo:
+            controller.update_event_notes(token, db_session, 1, "New notes")
+
+        assert "Token invalide pour la mise à jour des notes." in str(excinfo.value)
+        mock_auth.check_permission.assert_called_with(token, "update_event")
+        mock_event_dao.get.assert_called_once_with(db_session, 1)
+        mock_verify.assert_called_once_with(token)
+        mock_event_dao.update_notes.assert_not_called()
+
+    @patch("epiceventsCRM.controllers.event_controller.verify_token")
+    def test_delete_event_success_gestion(
+        self, mock_verify, db_session, setup_event_mocks, test_event
+    ):
+        controller, mock_event_dao, _, _, _, mock_auth = setup_event_mocks
+        mock_verify.return_value = {"sub": 99, "department": "gestion"}
+        token = get_mock_gestion_token_str()
+        mock_auth.check_permission.return_value = True
+        mock_event_dao.delete.return_value = True
+
+        result = controller.delete_event(token, db_session, test_event.id)
+
+        assert result is True
+        mock_auth.check_permission.assert_called_with(token, "delete_event")
+        mock_event_dao.delete.assert_called_once_with(db_session, test_event.id)
+
+    @patch("epiceventsCRM.controllers.event_controller.verify_token")
+    def test_delete_event_another_success_gestion(
+        self, mock_verify, db_session, setup_event_mocks, test_event
+    ):
+        controller, mock_event_dao, _, _, _, mock_auth = setup_event_mocks
+        mock_verify.return_value = {"sub": 100, "department": "gestion"}
+        token = "gestion_token_2"
+        mock_auth.check_permission.return_value = True
+        mock_event_dao.delete.return_value = True
+
+        result = controller.delete_event(token, db_session, test_event.id)
+
+        assert result is True
+        mock_auth.check_permission.assert_called_with(token, "delete_event")
+        mock_event_dao.delete.assert_called_once_with(db_session, test_event.id)
+
+    @patch("epiceventsCRM.controllers.event_controller.verify_token")
+    def test_delete_event_fail_commercial_department(
+        self, mock_verify, db_session, setup_event_mocks, test_event
+    ):
+        controller, mock_event_dao, _, _, _, mock_auth = setup_event_mocks
+        commercial_id = 99
+        mock_verify.return_value = {"sub": commercial_id, "department": "commercial"}
+        token = "commercial_token"
+        mock_auth.check_permission.return_value = False
+
+        with pytest.raises(PermissionError):
+            controller.delete_event(token, db_session, test_event.id)
+
+        mock_auth.check_permission.assert_called_with(token, "delete_event")
+        mock_event_dao.get.assert_not_called()
+        mock_event_dao.delete.assert_not_called()
+
+    @patch("epiceventsCRM.controllers.event_controller.verify_token")
+    def test_delete_event_fail_support_department(
+        self, mock_verify, db_session, setup_event_mocks, test_event
+    ):
+        controller, mock_event_dao, _, _, _, mock_auth = setup_event_mocks
+        support_id = 5
+        mock_verify.return_value = {"sub": support_id, "department": "support"}
+        token = get_mock_support_token_str()
+        mock_auth.check_permission.return_value = False
+
+        with pytest.raises(PermissionError):
+            controller.delete_event(token, db_session, test_event.id)
+
+        mock_auth.check_permission.assert_called_with(token, "delete_event")
+        mock_event_dao.get.assert_not_called()
+        mock_event_dao.delete.assert_not_called()
+
+    @patch("epiceventsCRM.controllers.event_controller.verify_token")
+    def test_delete_event_not_found(self, mock_verify, db_session, setup_event_mocks):
+        controller, mock_event_dao, _, _, _, mock_auth = setup_event_mocks
+        mock_verify.return_value = {"sub": 99, "department": "gestion"}
+        token = get_mock_gestion_token_str()
+        mock_auth.check_permission.return_value = True
+        mock_event_dao.delete.return_value = False
+
+        result = controller.delete_event(token, db_session, 999)
+
+        assert result is False
+        mock_auth.check_permission.assert_called_with(token, "delete_event")
+        mock_event_dao.delete.assert_called_once_with(db_session, 999)

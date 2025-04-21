@@ -1,13 +1,11 @@
-from typing import Any, Dict, List
+from typing import Any, List
 
 import click
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from sqlalchemy.orm import Session
 
 from epiceventsCRM.controllers.client_controller import ClientController
-from epiceventsCRM.models.models import Client
 from epiceventsCRM.views.base_view import BaseView
 from epiceventsCRM.utils.permissions import PermissionError
 
@@ -127,14 +125,12 @@ class ClientView(BaseView):
                     )
                     client_view.display_item(client)
                 else:
-                    # Ce cas pourrait indiquer un problème non lié à la permission si l'exception n'est pas levée
                     console.print(
                         Panel.fit(
                             f"[bold red]Échec de la mise à jour du client {id}. Vérifiez l'ID ou contactez un administrateur.[/bold red]"
                         )
                     )
             except PermissionError as e:
-                # Affichage formaté de l'erreur de permission avec Rich
                 console.print(
                     Panel.fit(
                         f"[bold red]Permission refusée:[/bold red]\n{e.message}",
@@ -143,7 +139,6 @@ class ClientView(BaseView):
                     )
                 )
             except Exception as e:
-                # Gestion des autres erreurs potentielles
                 console.print(
                     Panel.fit(
                         f"[bold red]Une erreur inattendue s'est produite lors de la mise à jour:[/bold red]\n{str(e)}",
@@ -182,7 +177,6 @@ class ClientView(BaseView):
         """
         table = Table(title="Liste des clients")
 
-        # Définition des colonnes
         table.add_column("ID", style="cyan", justify="right")
         table.add_column("Nom", style="magenta")
         table.add_column("Email", style="green")
@@ -190,7 +184,6 @@ class ClientView(BaseView):
         table.add_column("Commercial", style="yellow")
         table.add_column("Créé le", style="dim")
 
-        # Ajout des lignes
         for client in clients:
             commercial = client.sales_contact.fullname if client.sales_contact else "Non assigné"
             created = client.create_date.strftime("%d/%m/%Y") if client.create_date else "-"
@@ -204,7 +197,6 @@ class ClientView(BaseView):
                 created,
             )
 
-        # Affichage du tableau
         console.print(table)
 
     def display_item(self, client: Any):
@@ -216,14 +208,11 @@ class ClientView(BaseView):
         """
         table = Table(title=f"Détails du client #{client.id}")
 
-        # Définition des colonnes
         table.add_column("Propriété", style="cyan")
         table.add_column("Valeur", style="green")
 
-        # Ajout des informations
         commercial = client.sales_contact.fullname if client.sales_contact else "Non assigné"
 
-        # Formatage des dates
         create_date = (
             client.create_date.strftime("%d/%m/%Y %H:%M") if client.create_date else "Non définie"
         )
@@ -240,5 +229,4 @@ class ClientView(BaseView):
         table.add_row("Date de création", create_date)
         table.add_row("Dernière mise à jour", update_date)
 
-        # Affichage du tableau
         console.print(table)

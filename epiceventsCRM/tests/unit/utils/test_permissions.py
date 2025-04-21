@@ -37,25 +37,21 @@ class TestPermissions:
 
     def test_has_permission(self):
         """Teste la vérification de permission pour différents départements."""
-        # Gestion a create_user
+
         assert has_permission(Department.GESTION, "create_user") is True
-        # Commercial n'a pas create_user
+
         assert has_permission(Department.COMMERCIAL, "create_user") is False
-        # Tous ont read_client
+
         assert has_permission(Department.SUPPORT, "read_client") is True
         assert has_permission(Department.COMMERCIAL, "read_client") is True
-        # Permission inexistante
+
         assert has_permission(Department.GESTION, "non_existent_perm") is False
 
 
-# --- Tests pour le décorateur require_permission --- #
-
-
-# Classe factice pour simuler un contrôleur
 class MockController:
     def __init__(self, auth_controller_mock):
         self.auth_controller = auth_controller_mock
-        self.entity_name = "test_entity"  # Pour le formatage de permission
+        self.entity_name = "test_entity"
 
     @require_permission("read_test")
     def method_requires_read_test(self, token, *args):
@@ -71,7 +67,6 @@ class MockController:
 
     @require_permission("some_perm")
     def method_without_token(self, *args):
-        # Ce cas ne devrait pas arriver si le décorateur est bien utilisé
         return "Should Fail"
 
     @require_permission("some_perm")
@@ -106,7 +101,6 @@ def test_require_permission_granted(mock_controller_instance, mock_auth_controll
 def test_require_permission_denied(mock_controller_instance, mock_auth_controller):
     """Teste le décorateur lorsque la permission est refusée."""
     mock_auth_controller.check_permission.return_value = False
-    # Simuler un retour de verify_token pour le message d'erreur
     mock_auth_controller.verify_token.return_value = {"sub": 123}
     token = "valid_token"
 
@@ -127,13 +121,11 @@ def test_require_permission_formatted(mock_controller_instance, mock_auth_contro
     result = mock_controller_instance.method_requires_formatted_perm(token)
 
     assert result == "Success"
-    # Vérifier que la permission a été correctement formatée
     mock_auth_controller.check_permission.assert_called_once_with(token, "read_test_entity")
 
 
 def test_require_permission_missing_token(mock_controller_instance):
     """Teste le décorateur lorsqu'aucun token n'est fourni (devrait échouer)."""
-    # Appeler sans argument token
     with pytest.raises(PermissionError) as excinfo:
         mock_controller_instance.method_requires_read_test()
 

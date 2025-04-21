@@ -1,14 +1,15 @@
-from typing import Any, List, Callable
+from typing import Any, List
+import math
 
 import click
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from epiceventsCRM.controllers.event_controller import EventController
 from epiceventsCRM.views.base_view import BaseView
-from epiceventsCRM.utils.auth import verify_token
 from epiceventsCRM.utils.permissions import PermissionError
 
 
@@ -43,12 +44,89 @@ class EventView(BaseView):
 
         event_view = EventView()
 
-        # Ajout des commandes de base (liste, obtenir, supprimer)
-        event.add_command(event_view.create_list_command())
+        @event.command("list-events")
+        @click.option("--page", type=int, default=1, help="Numéro de la page")
+        @click.option("--page-size", type=int, default=10, help="Nombre d'éléments par page")
+        @click.option(
+            "--no-support",
+            is_flag=True,
+            default=False,
+            help="Affiche uniquement les événements sans support assigné.",
+        )
+        @click.pass_context
+        def list_events(ctx, page, page_size, no_support):
+            """Liste les événements avec pagination et filtre optionnel."""
+            db: Session = get_session()
+            token = get_token()
+
+            if not token:
+                console.print(
+                    Panel.fit(
+                        "[bold red]Veuillez vous connecter d'abord.[/bold red]", border_style="red"
+                    )
+                )
+                return
+
+            if page < 1 or page_size < 1:
+                console.print(
+                    Panel.fit(
+                        "[bold red]Page et taille de page doivent être >= 1.[/bold red]",
+                        border_style="red",
+                    )
+                )
+                return
+
+            try:
+                items, total = event_view.controller.get_all(
+                    token, db, page=page, page_size=page_size, no_support_only=no_support
+                )
+
+                if not items:
+                    msg = "Aucun événement trouvé."
+                    if no_support:
+                        msg = "Aucun événement trouvé sans support assigné."
+                    console.print(
+                        Panel.fit(f"[bold yellow]{msg}[/bold yellow]", border_style="yellow")
+                    )
+                    return
+
+                total_pages = math.ceil(total / page_size)
+                console.print(
+                    f"\n[bold]Page {page} sur {total_pages}[/bold] - Total filtré: {total} événements"
+                )
+                console.print(
+                    f"Affichage des éléments {((page - 1) * page_size) + 1} à {min(page * page_size, total)}"
+                )
+
+                event_view.display_items(items)
+
+                if total_pages > 1:
+                    console.print("\n[bold]Navigation:[/bold]")
+                    options = f"{' --no-support' if no_support else ''}"
+                    if page > 1:
+                        console.print(f"  Page précédente: list-events --page {page - 1}{options}")
+                    if page < total_pages:
+                        console.print(f"  Page suivante:   list-events --page {page + 1}{options}")
+                    console.print(f"  Changer taille:  list-events --page-size <nombre>{options}")
+
+            except PermissionError as e:
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Permission refusée:[/bold red]\n{e.message}",
+                        title="Erreur",
+                        border_style="red",
+                    )
+                )
+            except Exception as e:
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Erreur lors de la récupération des événements:[/bold red]\n{str(e)}",
+                        border_style="red",
+                    )
+                )
+
         event.add_command(event_view.create_get_command())
         event.add_command(event_view.create_delete_command())
-
-        # Ajout des commandes spécifiques
 
         @event.command("create")
         @click.option("--contract", "-c", required=True, type=int, help="ID du contrat")
@@ -85,7 +163,6 @@ class EventView(BaseView):
             try:
                 event = event_view.controller.create(token, db, event_data)
 
-                # Si l'événement est retourné (pas d'exception), c'est un succès
                 if event:
                     console.print(
                         Panel.fit(
@@ -96,21 +173,19 @@ class EventView(BaseView):
                 else:
                     console.print(
                         Panel.fit(
-                            f"[bold red]Échec de la création de l'événement (raison inconnue).[/bold red]",
+                            "[bold red]Échec de la création de l'événement (raison inconnue).[/bold red]",
                             border_style="red",
                         )
                     )
             except (PermissionError, ValueError, IntegrityError) as e:
-                # Capturer les erreurs spécifiques attendues (Permission, Données invalides, Contrainte BDD)
                 console.print(
                     Panel.fit(
-                        f"[bold red]Échec de la création:[/bold red]\n{e}",  # Afficher directement le message de l'exception
+                        f"[bold red]Échec de la création:[/bold red]\n{e}",
                         title="Erreur",
                         border_style="red",
                     )
                 )
             except Exception as e:
-                # Capturer toute autre exception inattendue
                 console.print(
                     Panel.fit(
                         f"[bold red]Erreur lors de la création :[/bold red]\n{str(e)}",
@@ -369,17 +444,14 @@ class EventView(BaseView):
         table.add_column("Support", style="red")
 
         for event in events:
-            # Récupération des informations client
             client_info = event.get_client_info()
             client_name = client_info["name"] if client_info else "Non disponible"
 
-            # Formatage des dates
             start_date = (
                 event.start_event.strftime("%d/%m/%Y %H:%M") if event.start_event else "N/A"
             )
             end_date = event.end_event.strftime("%d/%m/%Y %H:%M") if event.end_event else "N/A"
 
-            # Récupération du nom du support
             support_name = (
                 event.support_contact.fullname if event.support_contact else "Non assigné"
             )
@@ -405,26 +477,21 @@ class EventView(BaseView):
         """
         table = Table(title=f"Détails de l'événement #{event.id}")
 
-        # Définition des colonnes
         table.add_column("Propriété", style="cyan")
         table.add_column("Valeur", style="green")
 
-        # Récupération des informations client
         client_info = event.get_client_info()
         client_name = client_info["name"] if client_info else "Non disponible"
         client_email = client_info["email"] if client_info else "Non disponible"
         client_phone = client_info["phone"] if client_info else "Non disponible"
 
-        # Formatage des dates
         start_date = (
             event.start_event.strftime("%d/%m/%Y %H:%M") if event.start_event else "Non définie"
         )
         end_date = event.end_event.strftime("%d/%m/%Y %H:%M") if event.end_event else "Non définie"
 
-        # Récupération du nom du support
         support_name = event.support_contact.fullname if event.support_contact else "Non assigné"
 
-        # Ajout des informations
         table.add_row("ID", str(event.id))
         table.add_row("Nom", event.name)
         table.add_row("Contrat ID", str(event.contract_id))
@@ -438,5 +505,4 @@ class EventView(BaseView):
         table.add_row("Participants", str(event.attendees))
         table.add_row("Notes", event.notes or "Aucune note")
 
-        # Affichage du tableau
         console.print(table)

@@ -18,7 +18,6 @@ class TestDatabaseConnection:
     def test_session_creation(self, db_session):
         """Teste si une session peut être créée."""
         assert db_session is not None
-        # Tester une opération simple
         result = db_session.execute(text("SELECT 1"))
         assert result.scalar() == 1
         db_session.close()

@@ -58,7 +58,6 @@ class MockAuthController:
         payload = self._verify_token_impl(token)
         if not payload:
             return False
-        # Utiliser les permissions du payload (qui viennent de self.users)
         has_perm = permission in payload.get("permissions", [])
         return has_perm
 

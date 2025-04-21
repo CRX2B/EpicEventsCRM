@@ -65,31 +65,35 @@ class BaseController(Generic[T]):
     @require_permission("read_{entity_name}")
     @capture_exception
     def get_all(
-        self, token: str, db: Session, page: int = 1, page_size: int = 10
+        self, token: str, db: Session, page: int = 1, page_size: int = 10, filters: dict = None
     ) -> Tuple[List[T], int]:
         """
-        Récupère toutes les entités avec pagination basée sur les pages.
+        Récupère toutes les entités avec pagination et filtres optionnels.
 
         Args:
             token: Token JWT de l'utilisateur
             db: Session de base de données
             page: Numéro de la page (commence à 1)
             page_size: Nombre d'éléments par page
+            filters (dict, optional): Dictionnaire des filtres à passer au DAO.
 
         Returns:
-            Tuple[List[T], int]: (Liste des entités, nombre total d'entités)
+            Tuple[List[T], int]: (Liste des entités, nombre total d'entités filtrées)
 
         Raises:
             PermissionError: Si l'utilisateur n'a pas la permission de lecture
         """
         try:
-            return self.dao.get_all(db, page=page, page_size=page_size)
+            return self.dao.get_all(db, page=page, page_size=page_size, filters=filters)
         except PermissionError as e:
             capture_message(
                 f"Erreur de permission lors de la lecture de tous les {self.entity_name}s",
                 level="warning",
                 extra={"error": str(e)},
             )
+            raise
+        except Exception as e:
+            capture_exception(e)
             raise
 
     @require_permission("create_{entity_name}")

@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -9,7 +9,7 @@ from epiceventsCRM.dao.contract_dao import ContractDAO
 from epiceventsCRM.dao.event_dao import EventDAO
 from epiceventsCRM.dao.user_dao import UserDAO
 from epiceventsCRM.models.models import Event
-from epiceventsCRM.utils.permissions import require_permission, PermissionError, Department
+from epiceventsCRM.utils.permissions import require_permission, PermissionError
 from epiceventsCRM.utils.sentry_utils import capture_exception
 from epiceventsCRM.utils.auth import verify_token
 
@@ -30,6 +30,41 @@ class EventController(BaseController[Event]):
         self.client_dao = ClientDAO()
         self.user_dao = UserDAO()
 
+    @require_permission("read_event")
+    @capture_exception
+    def get_all(
+        self,
+        token: str,
+        db: Session,
+        page: int = 1,
+        page_size: int = 10,
+        no_support_only: bool = False,
+    ) -> Tuple[List[Event], int]:
+        """
+        Récupère tous les événements avec pagination et filtre optionnel pour les événements sans support.
+
+        Args:
+            token: Token JWT de l'utilisateur
+            db: Session de base de données
+            page: Numéro de la page (commence à 1)
+            page_size: Nombre d'éléments par page
+            no_support_only (bool): Si True, filtre les événements sans support assigné (support_contact_id IS NULL).
+
+        Returns:
+            Tuple[List[Event], int]: (Liste des événements filtrés, nombre total)
+        """
+        filters = {}
+        if no_support_only:
+            filters["support_contact_id"] = None
+
+        try:
+            return self.dao.get_all(
+                db, page=page, page_size=page_size, filters=filters if filters else None
+            )
+        except Exception as e:
+            capture_exception(e)
+            return [], 0
+
     @require_permission("read_{entity_name}")
     def get_event(self, token: str, db: Session, event_id: int) -> Optional[Event]:
         """
@@ -47,7 +82,6 @@ class EventController(BaseController[Event]):
             PermissionError: Si l'utilisateur n'a pas la permission de lecture
         """
 
-        # Récupérer l'événement avec ses relations
         event = self.dao.get(db, event_id)
         if not event:
             return None
@@ -88,14 +122,13 @@ class EventController(BaseController[Event]):
         Raises:
             PermissionError: Si l'utilisateur n'a pas la permission de lecture
         """
-        # La permission de base est gérée par le décorateur
-        payload = verify_token(token)  # Nécessaire ici pour obtenir l'ID utilisateur
+        payload = verify_token(token)
         if not payload or "sub" not in payload:
             return []
 
         user_id = payload["sub"]
         events = self.dao.get_by_support(db, user_id)
-        return events  # Retourne directement la liste
+        return events
 
     @require_permission("create_event")
     @capture_exception
@@ -125,7 +158,7 @@ class EventController(BaseController[Event]):
         if not contract:
             raise ValueError(f"Contrat avec ID {event_data['contract_id']} non trouvé")
 
-        # S'assurer que le contrat est signé AVANT de créer un événement (vérifier APRES avoir trouvé le contrat)
+        # S'assurer que le contrat est signé AVANT de créer un événement
         if not contract.status:
             raise ValueError(
                 f"Le contrat {contract.id} n'est pas signé. Impossible de créer un événement."
@@ -137,14 +170,12 @@ class EventController(BaseController[Event]):
         except IntegrityError as e:
             db.rollback()  # Annuler la transaction en cas d'erreur d'intégrité
             capture_exception(e)
-            # Renvoyer une erreur spécifique ou None
             raise IntegrityError(
                 f"Erreur de base de données lors de la création: {e}", orig=e, params=event_data
             )
         except Exception as e:
             db.rollback()
             capture_exception(e)
-            # Renvoyer None ou relancer une exception générique
             raise
 
     @require_permission("update_{entity_name}")
@@ -167,22 +198,18 @@ class EventController(BaseController[Event]):
         Raises:
             PermissionError: Si l'utilisateur n'a pas la permission de mise à jour
         """
-        # Vérifier que l'événement existe
         event = self.dao.get(db, event_id)
         if not event:
             return None
 
-        # Vérifier que le support existe
         support = self.user_dao.get(db, support_id)
         if not support:
             return None
 
-        # Vérifier que le support appartient bien au département support
         payload = verify_token(token)
         if not payload or payload.get("department") != "gestion":
             return None
 
-        # Mise à jour du support
         return self.dao.update_support(db, event_id, support_id)
 
     @require_permission("update_{entity_name}")
@@ -208,21 +235,18 @@ class EventController(BaseController[Event]):
                          ou n'est pas le support assigné.
         """
 
-        # Récupérer l'événement
         event = self.dao.get(db, event_id)
         if not event:
             return None
 
-        # Vérifier le token et la permission spécifique (être le support assigné)
         payload = verify_token(token)
         if not payload or "sub" not in payload:
             raise PermissionError("Token invalide pour la mise à jour des notes.")
 
         user_id = payload["sub"]
         if event.support_contact_id != user_id:
-            # Lever une exception si l'utilisateur n'est pas le bon support
             raise PermissionError(
-                f"Vous n'êtes pas le support assigné à cet événement.",
+                "Vous n'êtes pas le support assigné à cet événement.",
                 user_id=user_id,
                 permission="update_event_notes",
             )
@@ -233,7 +257,6 @@ class EventController(BaseController[Event]):
         except Exception as e:
             db.rollback()
             capture_exception(e)
-            # Renvoyer None ou relancer
             raise
 
     @require_permission("delete_{entity_name}")
@@ -258,6 +281,5 @@ class EventController(BaseController[Event]):
         try:
             return self.dao.delete(db, event_id)
         except Exception as e:
-            # Capturer les exceptions potentielles du DAO
             capture_exception(e)
             return False

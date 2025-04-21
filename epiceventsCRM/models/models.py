@@ -1,4 +1,13 @@
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    CheckConstraint,
+)
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -25,10 +34,10 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    fullname = Column(String)
-    email = Column(String, unique=True)
-    password = Column(String)
-    departement_id = Column(Integer, ForeignKey("departments.id"))
+    fullname = Column(String(100), nullable=False)
+    email = Column(String(100), unique=True, nullable=False)
+    password = Column(String(255), nullable=False)
+    departement_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
 
     # Relations
     department = relationship("Department", back_populates="users")
@@ -48,7 +57,7 @@ class Client(Base):
         id (int): Identifiant unique du client
         fullname (str): Nom complet du client
         email (str): Adresse email unique du client
-        phone_number (int): Numéro de téléphone du client
+        phone_number (str): Numéro de téléphone du client
         enterprise (str): Nom de l'entreprise du client
         create_date (DateTime): Date de création du client
         update_date (DateTime): Date de dernière mise à jour
@@ -63,13 +72,13 @@ class Client(Base):
     __tablename__ = "clients"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    fullname = Column(String)
-    email = Column(String, unique=True)
-    phone_number = Column(Integer)
-    enterprise = Column(String)
-    create_date = Column(DateTime)
+    fullname = Column(String(100), nullable=False)
+    email = Column(String(100), unique=True, nullable=False)
+    phone_number = Column(String(20), nullable=False)
+    enterprise = Column(String(100), nullable=False)
+    create_date = Column(DateTime, nullable=False)
     update_date = Column(DateTime)
-    sales_contact_id = Column(Integer, ForeignKey("users.id"))
+    sales_contact_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     # Relations
     sales_contact = relationship("User", back_populates="clients")
@@ -102,12 +111,12 @@ class Contract(Base):
     __tablename__ = "contracts"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    client_id = Column(Integer, ForeignKey("clients.id"))
-    amount = Column(Float)
-    remaining_amount = Column(Float)
-    create_date = Column(DateTime)
-    status = Column(Boolean)
-    sales_contact_id = Column(Integer, ForeignKey("users.id"))
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    amount = Column(Float, CheckConstraint("amount>=0"), nullable=False)
+    remaining_amount = Column(Float, CheckConstraint("remaining_amount>=0"), nullable=False)
+    create_date = Column(DateTime, nullable=False)
+    status = Column(Boolean, nullable=False)
+    sales_contact_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     # Relations
     client = relationship("Client", back_populates="contracts")
@@ -140,15 +149,15 @@ class Event(Base):
     __tablename__ = "events"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String)
-    contract_id = Column(Integer, ForeignKey("contracts.id"))
-    client_id = Column(Integer, ForeignKey("clients.id"))
-    start_event = Column(DateTime)
-    end_event = Column(DateTime)
-    location = Column(String)
-    support_contact_id = Column(Integer, ForeignKey("users.id"))
-    attendees = Column(Integer)
-    notes = Column(String)
+    name = Column(String(100), nullable=False)
+    contract_id = Column(Integer, ForeignKey("contracts.id"), nullable=False)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    start_event = Column(DateTime, nullable=False)
+    end_event = Column(DateTime, nullable=False)
+    location = Column(String(255), nullable=False)
+    support_contact_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    attendees = Column(Integer, CheckConstraint("attendees>=0"), nullable=False)
+    notes = Column(String(500))
 
     # Relations
     contract = relationship("Contract", back_populates="events")
@@ -181,7 +190,7 @@ class Department(Base):
     __tablename__ = "departments"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    departement_name = Column(String)
+    departement_name = Column(String(100), nullable=False)
 
     # Relations
     users = relationship("User", back_populates="department")

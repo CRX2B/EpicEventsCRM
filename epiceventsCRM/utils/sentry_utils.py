@@ -32,9 +32,7 @@ def capture_exception(func):
         try:
             return func(*args, **kwargs)
         except Exception as e:
-            # Capture l'exception dans Sentry
             sentry_sdk.capture_exception(e)
-            # Relève l'exception pour ne pas masquer l'erreur
             raise
 
     return wrapper

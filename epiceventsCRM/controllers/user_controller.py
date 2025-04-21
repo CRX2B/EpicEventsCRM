@@ -8,6 +8,7 @@ from epiceventsCRM.dao.user_dao import UserDAO
 from epiceventsCRM.models.models import User
 from epiceventsCRM.utils.permissions import require_permission
 from epiceventsCRM.utils.sentry_utils import capture_exception, capture_message
+from epiceventsCRM.utils.validators import is_valid_email_format
 
 
 class UserController(BaseController[User]):
@@ -58,38 +59,12 @@ class UserController(BaseController[User]):
         """
         return self.get_all(token, db)[0]
 
-    @require_permission("create_user")
-    def create(self, token: str, db: Session, user_data: Dict) -> Optional[User]:
-        """
-        Crée un nouvel utilisateur.
-
-        Args:
-            token: Token JWT de l'utilisateur
-            db: Session de base de données
-            user_data: Données de l'utilisateur à créer
-
-        Returns:
-            L'utilisateur créé si l'opération réussit, None sinon
-
-        Raises:
-            ValueError: Si des champs obligatoires sont manquants
-            PermissionError: Si l'utilisateur n'a pas la permission de création
-        """
-        user = self.dao.create(db, user_data)
-        if user:
-            # Journalisation Sentry de la création d'un collaborateur
-            capture_message(
-                f"Création d'un collaborateur: {user.email}",
-                level="info",
-                extra={"user_id": user.id, "email": user.email},
-            )
-        return user
-
     @require_permission("update_user")
     @capture_exception
     def update(self, token: str, db: Session, user_id: int, user_data: Dict) -> Optional[User]:
         """
         Met à jour un utilisateur.
+        Avec validation des formats pour email et phone_number.
 
         Args:
             token: Token JWT de l'utilisateur
@@ -102,7 +77,26 @@ class UserController(BaseController[User]):
 
         Raises:
             PermissionError: Si l'utilisateur n'a pas la permission de mise à jour
+            ValueError: If email format is invalid.
         """
+        # --- Validation ---
+        errors = []
+        if "email" in user_data:
+            email = user_data["email"]
+            if not email or not is_valid_email_format(email):
+                errors.append("Format d'email invalide.")
+
+        if "fullname" in user_data and len(user_data["fullname"]) > 100:
+            errors.append("Nom complet trop long (max 100 caractères).")
+
+        if errors:
+            error_message = (
+                f"Erreurs de validation lors de la mise à jour de l'utilisateur {user_id}: "
+                + ", ".join(errors)
+            )
+            capture_message(error_message, level="warning")
+            raise ValueError(error_message)
+        # --- Fin Validation ---
 
         user = super().update(token, db, user_id, user_data)
         if user:
@@ -137,8 +131,7 @@ class UserController(BaseController[User]):
 
         user = self.dao.get(db, user_id)
         if not user:
-            return False  # Utilisateur non trouvé
-        # Si l'utilisateur existe, le supprimer
+            return False
         return self.dao.delete(db, user_id)
 
     @require_permission("read_user")
@@ -215,6 +208,7 @@ class UserController(BaseController[User]):
     ) -> Optional[User]:
         """
         Crée un utilisateur avec un département spécifique.
+        Avec validation des formats pour email et phone_number.
 
         Args:
             token: Token JWT de l'utilisateur
@@ -226,19 +220,53 @@ class UserController(BaseController[User]):
             L'utilisateur créé si l'opération réussit, None sinon
 
         Raises:
-            ValueError: Si le département ID est invalide ou si des champs sont manquants
+            ValueError: Si le département ID est invalide, si des champs sont manquants, ou format email invalide
             PermissionError: Si l'utilisateur n'a pas la permission de création
         """
 
         user_data["departement_id"] = department_id
 
+        # --- Validation ---
+        errors = []
+        required_fields = ["fullname", "email", "password"]
+        for field in required_fields:
+            if field not in user_data or not user_data[field]:
+                errors.append(f"Champ obligatoire manquant ou vide: {field}")
+
+        email = user_data.get("email")
+        if email and not is_valid_email_format(email):
+            errors.append("Format d'email invalide.")
+
+        if user_data.get("fullname") and len(user_data["fullname"]) > 100:
+            errors.append("Nom complet trop long (max 100 caractères).")
+
+        if errors:
+            error_message = (
+                "Erreurs de validation lors de la création de l'utilisateur (avec département): "
+                + ", ".join(errors)
+            )
+            capture_message(error_message, level="warning")
+            raise ValueError(error_message)
+        # --- Fin Validation ---
+
         try:
             user = self.dao.create(db, user_data)
-        except IntegrityError:
-            db.rollback()
-            raise ValueError(
-                f"Département ID {department_id} invalide ou une autre contrainte violée."
-            )
+        except IntegrityError as e:
+            if db:
+                db.rollback()
+            capture_exception(e)
+            if (
+                "violates foreign key constraint" in str(e).lower()
+                and "departments" in str(e).lower()
+            ):
+                raise ValueError(f"Département ID {department_id} invalide.")
+            else:
+                raise ValueError(f"Contrainte de base de données violée lors de la création: {e}")
+        except Exception as e:
+            if db:
+                db.rollback()
+            capture_exception(e)
+            raise
 
         if user:
             # Journalisation Sentry de la création d'un collaborateur

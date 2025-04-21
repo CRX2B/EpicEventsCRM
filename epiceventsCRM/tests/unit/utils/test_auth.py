@@ -12,11 +12,11 @@ from epiceventsCRM.utils.auth import (
     verify_password,
     generate_token,
     verify_token,
-    JWT_SECRET,  # Importer pour le test de vérification
-    JWT_ALGORITHM,  # Importer pour le test de vérification
+    JWT_SECRET,
+    JWT_ALGORITHM,
 )
 
-# Charger les variables d'environnement pour les tests si nécessaire
+
 load_dotenv()
 
 
@@ -50,7 +50,6 @@ class TestAuthUtils:
         token = generate_token(user_id, department)
         assert isinstance(token, str)
 
-        # Décoder le token pour vérifier le contenu (sans vérifier la signature ici)
         payload = jwt.decode(token, options={"verify_signature": False})
         assert payload["sub"] == user_id
         assert payload["department"] == department
@@ -70,7 +69,7 @@ class TestAuthUtils:
         """Teste la vérification d'un token JWT expiré."""
         user_id = 123
         department = "support"
-        # Créer un payload avec une date d'expiration passée
+
         past_exp = datetime.now(timezone.utc) - timedelta(hours=1)
         payload_data = {"sub": user_id, "department": department, "exp": past_exp}
         expired_token = jwt.encode(payload_data, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -87,7 +86,7 @@ class TestAuthUtils:
             "department": department,
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         }
-        # Générer avec une mauvaise clé secrète
+
         invalid_token = jwt.encode(payload_data, "wrong_secret", algorithm=JWT_ALGORITHM)
 
         payload = verify_token(invalid_token)

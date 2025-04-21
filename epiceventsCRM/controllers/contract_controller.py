@@ -1,14 +1,12 @@
-from datetime import datetime
-from typing import List, Optional, Tuple, Union, Dict
+from typing import List, Optional, Tuple, Dict
 
-import jwt
 from sqlalchemy.orm import Session
 
 from epiceventsCRM.controllers.base_controller import BaseController
 from epiceventsCRM.dao.client_dao import ClientDAO
 from epiceventsCRM.dao.contract_dao import ContractDAO
 from epiceventsCRM.dao.user_dao import UserDAO
-from epiceventsCRM.models.models import Client, Contract, User
+from epiceventsCRM.models.models import Contract
 from epiceventsCRM.utils.permissions import require_permission
 from epiceventsCRM.utils.sentry_utils import capture_exception, capture_message
 from epiceventsCRM.utils.auth import verify_token
@@ -29,8 +27,45 @@ class ContractController(BaseController[Contract]):
         self.client_dao = ClientDAO()
         self.user_dao = UserDAO()
 
-        self.list_contracts = self.get_all
-        self.get_contract = self.get
+    @require_permission("read_contract")
+    @capture_exception
+    def get_all(
+        self,
+        token: str,
+        db: Session,
+        page: int = 1,
+        page_size: int = 10,
+        unsigned_only: bool = False,
+        unpaid_only: bool = False,
+    ) -> Tuple[List[Contract], int]:
+        """
+        Récupère tous les contrats avec pagination et filtres optionnels.
+
+        Args:
+            token: Token JWT de l'utilisateur
+            db: Session de base de données
+            page: Numéro de la page (commence à 1)
+            page_size: Nombre d'éléments par page
+            unsigned_only (bool): Si True, filtre les contrats non signés (status=False).
+            unpaid_only (bool): Si True, filtre les contrats non entièrement payés (remaining_amount > 0).
+
+        Returns:
+            Tuple[List[Contract], int]: (Liste des contrats filtrés, nombre total)
+        """
+        filters = {}
+        if unsigned_only:
+            filters["status"] = False
+        if unpaid_only:
+            # Utiliser une structure spéciale pour indiquer 'greater than 0'
+            filters["remaining_amount"] = ("gt", 0)
+
+        try:
+            return self.dao.get_all(
+                db, page=page, page_size=page_size, filters=filters if filters else None
+            )
+        except Exception as e:
+            capture_exception(e)
+            return [], 0
 
     @require_permission("create_contract")
     @capture_exception
@@ -53,7 +88,7 @@ class ContractController(BaseController[Contract]):
         amount = data.get("amount")
         status = data.get("status", False)  # Statut par défaut non signé
 
-        if not client_id or amount is None:  # Vérifier que amount n'est pas None explicitement
+        if not client_id or amount is None:
             capture_message(
                 "Données manquantes pour la création du contrat (client_id ou amount)",
                 level="warning",
@@ -61,7 +96,6 @@ class ContractController(BaseController[Contract]):
             return None
 
         try:
-            # Vérifier si le client existe et récupérer son commercial
             client = self.client_dao.get(db, client_id)
             if not client:
                 capture_message(
@@ -75,13 +109,6 @@ class ContractController(BaseController[Contract]):
                     f"Le client {client_id} n'a pas de commercial assigné.", level="warning"
                 )
                 return None
-
-            contract_data_for_dao = {
-                "client_id": client_id,
-                "amount": amount,
-                "sales_contact_id": client.sales_contact_id,
-                "status": status,
-            }
 
             created_contract = self.dao.create_contract(
                 db=db,
@@ -99,7 +126,6 @@ class ContractController(BaseController[Contract]):
 
         except Exception as e:
             capture_exception(e)
-            # Renvoyer None en cas d'erreur après capture
             return None
 
     @require_permission("read_contract")
@@ -135,7 +161,6 @@ class ContractController(BaseController[Contract]):
         Raises:
             PermissionError: Si l'utilisateur n'a pas la permission de lecture
         """
-        # Récupérer l'ID de l'utilisateur depuis le token
         payload = verify_token(token)
         if not payload or "sub" not in payload:
             return []
@@ -164,7 +189,6 @@ class ContractController(BaseController[Contract]):
             PermissionError: Si l'utilisateur n'a pas la permission de mise à jour
         """
         try:
-            # Récupérer le contrat existant
             contract = self.dao.get(db, contract_id)
             if not contract:
                 capture_message(
@@ -173,7 +197,6 @@ class ContractController(BaseController[Contract]):
                 )
                 return None
 
-            # Vérifier les permissions
             payload = verify_token(token)
             if not payload or "sub" not in payload:
                 capture_message("Tentative de mise à jour avec un token invalide", level="warning")
@@ -188,7 +211,6 @@ class ContractController(BaseController[Contract]):
                 level="info",
             )
 
-            # Vérifier les permissions selon le département
             if department == "commercial":
                 if contract.client.sales_contact_id != user_id:
                     capture_message(
@@ -203,10 +225,8 @@ class ContractController(BaseController[Contract]):
                 )
                 return None
 
-            # Sauvegarder l'ancien statut avant la mise à jour
             old_status = contract.status
 
-            # Mettre à jour le contrat en utilisant l'objet contract au lieu de contract_id
             updated_contract = self.dao.update(db, contract, update_data)
 
             # Journaliser la signature si le statut a changé de False à True
@@ -214,7 +234,7 @@ class ContractController(BaseController[Contract]):
                 updated_contract
                 and "status" in update_data
                 and update_data["status"] is True
-                and old_status == False
+                and not old_status
             ):
                 capture_message(
                     f"Contrat {contract_id} signé par l'utilisateur {user_id}",
@@ -252,7 +272,6 @@ class ContractController(BaseController[Contract]):
             True si la suppression a réussi, False sinon.
         """
 
-        # Vérification de l'existence du contrat.
         contract = self.dao.get(db, contract_id)
         if not contract:
             capture_message(
@@ -272,5 +291,4 @@ class ContractController(BaseController[Contract]):
             return deleted
         except Exception as e:
             capture_exception(e)
-            # Renvoyer False en cas d'erreur après capture
             return False

@@ -8,6 +8,7 @@ from epiceventsCRM.models.models import Client
 from epiceventsCRM.utils.permissions import require_permission
 from epiceventsCRM.utils.auth import verify_token
 from epiceventsCRM.utils.sentry_utils import capture_exception, capture_message
+from epiceventsCRM.utils.validators import is_valid_email_format, is_valid_phone_format
 
 
 class ClientController(BaseController[Client]):
@@ -75,13 +76,13 @@ class ClientController(BaseController[Client]):
             )
             return None
 
-        # Mise à jour du commercial
         return self.dao.update_commercial(db, client, commercial_id)
 
     @require_permission("create_client")
     def create(self, token: str, db: Session, client_data: Dict) -> Optional[Client]:
         """
         Crée un nouveau client en assignant automatiquement le commercial.
+        Avec validation des formats pour email et phone_number.
 
         Args:
             token (str): Le token JWT
@@ -92,7 +93,6 @@ class ClientController(BaseController[Client]):
             Optional[Client]: Le client créé
         """
         try:
-            # Récupération des informations de l'utilisateur depuis le token
             payload = verify_token(token)
 
             if not payload or "sub" not in payload:
@@ -101,20 +101,42 @@ class ClientController(BaseController[Client]):
                 )
                 return None
 
-            # Attribution du commercial (l'utilisateur connecté) au client
             client_data["sales_contact_id"] = payload["sub"]
 
-            # Vérification des champs obligatoires
+            # --- Validation ---
+            errors = []
             required_fields = ["fullname", "email", "phone_number", "enterprise"]
             for field in required_fields:
-                if field not in client_data:
-                    capture_message(f"Erreur: champ obligatoire manquant: {field}", level="error")
-                    return None
+                if field not in client_data or not client_data[field]:
+                    errors.append(f"Champ obligatoire manquant ou vide: {field}")
 
-            # Appeler la méthode create_client du DAO qui définit les dates automatiquement
+            email = client_data.get("email")
+            phone = client_data.get("phone_number")
+
+            if email and not is_valid_email_format(email):
+                errors.append("Format d'email invalide.")
+
+            if phone and not is_valid_phone_format(phone):
+                errors.append("Format de numéro de téléphone invalide.")
+
+            if client_data.get("fullname") and len(client_data["fullname"]) > 100:
+                errors.append("Nom complet trop long (max 100 caractères).")
+            if client_data.get("enterprise") and len(client_data["enterprise"]) > 100:
+                errors.append("Nom d'entreprise trop long (max 100 caractères).")
+
+            if errors:
+                error_message = "Erreurs de validation lors de la création du client: " + ", ".join(
+                    errors
+                )
+                capture_message(error_message, level="warning")
+                return None
+            # --- Fin Validation ---
+
             client = self.dao.create_client(db, client_data)
             if not client:
-                capture_message("Erreur: création du client échouée", level="error")
+                capture_message(
+                    "Erreur: création du client échouée après validation", level="error"
+                )
                 return None
 
             return client
@@ -167,7 +189,6 @@ class ClientController(BaseController[Client]):
         Returns:
             List[Client]: Liste des clients gérés par l'utilisateur
         """
-        # Récupération des informations de l'utilisateur depuis le token
         user_info = verify_token(token)
         if not user_info or "sub" not in user_info:
             capture_message(
@@ -176,7 +197,6 @@ class ClientController(BaseController[Client]):
             )
             return []
 
-        # Récupération des clients gérés par l'utilisateur
         return self.dao.get_by_sales_contact(db, user_info["sub"])
 
     @require_permission("update_client")
@@ -185,6 +205,7 @@ class ClientController(BaseController[Client]):
     ) -> Optional[Client]:
         """
         Met à jour un client.
+        Avec validation des formats pour email et phone_number.
 
         Args:
             db (Session): La session de base de données
@@ -195,7 +216,6 @@ class ClientController(BaseController[Client]):
         Returns:
             Optional[Client]: Le client mis à jour si la permission est accordée, None sinon
         """
-        # Vérification que le client existe
         client = self.dao.get(db, client_id)
         if not client:
             return None
@@ -216,7 +236,33 @@ class ClientController(BaseController[Client]):
             )
             return None
 
-        return self.dao.update_client(db, client_id, client_data)
+        # --- Validation ---
+        errors = []
+        if "email" in client_data:
+            email = client_data["email"]
+            if not email or not is_valid_email_format(email):
+                errors.append("Format d'email invalide.")
+
+        if "phone_number" in client_data:
+            phone = client_data["phone_number"]
+            if not phone or not is_valid_phone_format(phone):
+                errors.append("Format de numéro de téléphone invalide.")
+
+        if "fullname" in client_data and len(client_data["fullname"]) > 100:
+            errors.append("Nom complet trop long (max 100 caractères).")
+        if "enterprise" in client_data and len(client_data["enterprise"]) > 100:
+            errors.append("Nom d'entreprise trop long (max 100 caractères).")
+
+        if errors:
+            error_message = "Erreurs de validation lors de la mise à jour du client: " + ", ".join(
+                errors
+            )
+            capture_message(error_message, level="warning")
+            return None
+        # --- Fin Validation ---
+
+        updated_client = self.dao.update_client(db, client_id, client_data)
+        return updated_client
 
     @require_permission("delete_client")
     def delete_client(self, db: Session, token: str, client_id: int) -> bool:
@@ -231,7 +277,6 @@ class ClientController(BaseController[Client]):
         Returns:
             bool: True si le client a été supprimé et si la permission est accordée, False sinon
         """
-        # Vérification que le client existe
         client = self.dao.get(db, client_id)
         if not client:
             return False

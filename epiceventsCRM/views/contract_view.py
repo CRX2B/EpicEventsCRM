@@ -1,8 +1,10 @@
 from typing import Any, List
+import math
 
 import click
 from rich.panel import Panel
 from rich.table import Table
+from sqlalchemy.orm import Session
 
 from epiceventsCRM.controllers.contract_controller import ContractController
 from epiceventsCRM.views.base_view import BaseView, console
@@ -37,12 +39,111 @@ class ContractView(BaseView):
 
         contract_view = ContractView()
 
-        # Ajout des commandes de base (liste, obtenir, supprimer)
-        contract.add_command(contract_view.create_list_command())
+        @contract.command("list-contracts")
+        @click.option("--page", type=int, default=1, help="Numéro de la page")
+        @click.option("--page-size", type=int, default=10, help="Nombre d'éléments par page")
+        @click.option(
+            "--unsigned",
+            is_flag=True,
+            default=False,
+            help="Affiche uniquement les contrats non signés.",
+        )
+        @click.option(
+            "--unpaid",
+            is_flag=True,
+            default=False,
+            help="Affiche uniquement les contrats non entièrement payés.",
+        )
+        @click.pass_context
+        def list_contracts(ctx, page, page_size, unsigned, unpaid):
+            """Liste les contrats avec pagination et filtres optionnels."""
+            db: Session = get_session()
+            token = get_token()
+
+            if not token:
+                console.print(
+                    Panel.fit(
+                        "[bold red]Veuillez vous connecter d'abord.[/bold red]", border_style="red"
+                    )
+                )
+                return
+
+            if page < 1 or page_size < 1:
+                console.print(
+                    Panel.fit(
+                        "[bold red]Page et taille de page doivent être >= 1.[/bold red]",
+                        border_style="red",
+                    )
+                )
+                return
+
+            try:
+                items, total = contract_view.controller.get_all(
+                    token,
+                    db,
+                    page=page,
+                    page_size=page_size,
+                    unsigned_only=unsigned,
+                    unpaid_only=unpaid,
+                )
+
+                if not items:
+                    filter_msg = []
+                    if unsigned:
+                        filter_msg.append("non signés")
+                    if unpaid:
+                        filter_msg.append("non payés")
+                    msg = "Aucun contrat trouvé."
+                    if filter_msg:
+                        msg = f"Aucun contrat trouvé correspondant aux filtres: {', '.join(filter_msg)}."
+                    console.print(
+                        Panel.fit(f"[bold yellow]{msg}[/bold yellow]", border_style="yellow")
+                    )
+                    return
+
+                total_pages = math.ceil(total / page_size)
+                console.print(
+                    f"\n[bold]Page {page} sur {total_pages}[/bold] - Total filtré: {total} contrats"
+                )
+                console.print(
+                    f"Affichage des éléments {((page - 1) * page_size) + 1} à {min(page * page_size, total)}"
+                )
+
+                contract_view.display_items(items)
+
+                if total_pages > 1:
+                    console.print("\n[bold]Navigation:[/bold]")
+                    options = f"{' --unsigned' if unsigned else ''}{' --unpaid' if unpaid else ''}"
+                    if page > 1:
+                        console.print(
+                            f"  Page précédente: list-contracts --page {page - 1}{options}"
+                        )
+                    if page < total_pages:
+                        console.print(
+                            f"  Page suivante:   list-contracts --page {page + 1}{options}"
+                        )
+                    console.print(
+                        f"  Changer taille:  list-contracts --page-size <nombre>{options}"
+                    )
+
+            except PermissionError as e:
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Permission refusée:[/bold red]\n{e.message}",
+                        title="Erreur",
+                        border_style="red",
+                    )
+                )
+            except Exception as e:
+                console.print(
+                    Panel.fit(
+                        f"[bold red]Erreur lors de la récupération des contrats:[/bold red]\n{str(e)}",
+                        border_style="red",
+                    )
+                )
+
         contract.add_command(contract_view.create_get_command())
         contract.add_command(contract_view.create_delete_command())
-
-        # Ajout des commandes spécifiques
 
         @contract.command("create")
         @click.option("--client", "-c", required=True, type=int, help="ID du client")
@@ -62,7 +163,6 @@ class ContractView(BaseView):
                 )
                 return
 
-            # Préparer le dictionnaire de données pour le contrôleur
             contract_data = {
                 "client_id": client,
                 "amount": amount,
@@ -83,12 +183,10 @@ class ContractView(BaseView):
                     )
                     contract_view.display_item(created_contract)
                 else:
-                    # L'échec peut être dû à une permission refusée (levée par le décorateur)
-                    # ou à une autre erreur (client non trouvé, commercial manquant, etc.)
                     # Le contrôleur log les détails avec Sentry/capture_message
                     console.print(
                         Panel.fit(
-                            f"[bold red]Échec de la création du contrat.[/bold red]\nVérifiez les informations fournies (ID client) et vos permissions.",
+                            "[bold red]Échec de la création du contrat.[/bold red]\nVérifiez les informations fournies (ID client) et vos permissions.",
                             title="Erreur de Création",
                             border_style="red",
                         )
@@ -101,9 +199,7 @@ class ContractView(BaseView):
                         border_style="red",
                     )
                 )
-            except (
-                ValueError
-            ) as e:  # Capturer les erreurs de valeur potentielles (ex: client non trouvé)
+            except ValueError as e:
                 console.print(
                     Panel.fit(
                         f"[bold red]Erreur de données:[/bold red]\n{str(e)}",
@@ -262,7 +358,6 @@ class ContractView(BaseView):
         """
         table = Table(title="Liste des Contrats", show_header=True, header_style="bold cyan")
 
-        # Définition des colonnes
         table.add_column("ID", style="dim", justify="center")
         table.add_column("Client", style="green")
         table.add_column("Montant", justify="right", style="yellow")
@@ -270,12 +365,10 @@ class ContractView(BaseView):
         table.add_column("Statut", justify="center")
         table.add_column("Commercial", style="green")
 
-        # Ajout des lignes
         for contract in contracts:
             client_name = contract.client.fullname if contract.client else "N/A"
             commercial = contract.sales_contact.fullname if contract.sales_contact else "N/A"
 
-            # Statut avec couleur spécifique
             status = "[green]Signé[/green]" if contract.status else "[red]Non signé[/red]"
 
             table.add_row(
@@ -287,7 +380,6 @@ class ContractView(BaseView):
                 commercial,
             )
 
-        # Affichage du tableau
         console.print(table)
 
     def display_item(self, contract: Any):
@@ -298,17 +390,14 @@ class ContractView(BaseView):
             contract (Any): Le contrat à afficher
         """
         try:
-            # Création d'un tableau pour les informations de base
             contract_info = Table(show_header=False, box=None)
             contract_info.add_column("Propriété", style="cyan")
             contract_info.add_column("Valeur")
 
-            # Ajout des informations de base du contrat
             contract_info.add_row("ID", str(contract.id))
             contract_info.add_row("Montant total", f"{contract.amount} €")
             contract_info.add_row("Montant restant", f"{contract.remaining_amount} €")
 
-            # Statut avec couleur spécifique
             status_value = "[green]Signé[/green]" if contract.status else "[red]Non signé[/red]"
             contract_info.add_row("Statut", status_value)
 
@@ -320,13 +409,11 @@ class ContractView(BaseView):
                 date_formatted = contract.updated_date.strftime("%Y-%m-%d %H:%M:%S")
                 contract_info.add_row("Dernière mise à jour", date_formatted)
 
-            # Obtenir les détails du client et du commercial
             from epiceventsCRM.database import get_session as get_db_session
 
             db = get_db_session()
 
             try:
-                # Récupérer les informations du client
                 from epiceventsCRM.models.models import Client, User
 
                 client = db.query(Client).filter(Client.id == contract.client_id).first()
@@ -334,7 +421,6 @@ class ContractView(BaseView):
                     contract_info.add_row("Client ID", str(contract.client_id))
                     contract_info.add_row("Client", f"[green]{client.fullname}[/green]")
 
-                # Récupérer les informations du commercial
                 commercial = db.query(User).filter(User.id == contract.sales_contact_id).first()
                 if commercial:
                     contract_info.add_row("Commercial ID", str(contract.sales_contact_id))
@@ -343,7 +429,6 @@ class ContractView(BaseView):
             finally:
                 db.close()
 
-            # Affichage des informations.
             panel = Panel(
                 contract_info,
                 title=f"[bold yellow]Contrat #{contract.id}[/bold yellow]",

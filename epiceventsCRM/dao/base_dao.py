@@ -1,6 +1,6 @@
 from typing import Generic, List, Optional, Type, TypeVar, Tuple
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, Column
 from sqlalchemy.orm import Session
 
 
@@ -36,27 +36,50 @@ class BaseDAO(Generic[ModelType]):
         return db.get(self.model, id)
 
     def get_all(
-        self, db: Session, page: int = 1, page_size: int = 10
+        self, db: Session, page: int = 1, page_size: int = 10, filters: dict = None
     ) -> Tuple[List[ModelType], int]:
         """
-        Récupère toutes les entités avec pagination basée sur les pages.
+        Récupère toutes les entités avec pagination et filtres optionnels.
 
         Args:
             db (Session): La session de base de données
             page (int): Numéro de la page (commence à 1)
             page_size (int): Nombre d'éléments par page
+            filters (dict, optional): Dictionnaire des filtres à appliquer.
+                                      La clé est le nom de l'attribut, la valeur est la valeur attendue
+                                      ou un tuple (opérateur, valeur) comme ('gt', 0).
 
         Returns:
-            Tuple[List[ModelType], int]: (Liste des entités, nombre total d'entités)
+            Tuple[List[ModelType], int]: (Liste des entités, nombre total d'entités filtrées)
         """
 
         skip = (page - 1) * page_size
 
-        # Récupération du nombre total d'éléments
-        total = db.scalar(select(func.count()).select_from(self.model))
+        query = select(self.model)
+        count_query = select(func.count()).select_from(self.model)
 
-        # Récupération des éléments paginés
-        items = list(db.scalars(select(self.model).offset(skip).limit(page_size)))
+        if filters:
+            for key, value in filters.items():
+                if hasattr(self.model, key):
+                    column: Column = getattr(self.model, key)
+                    if value is None:
+                        query = query.where(column.is_(None))
+                        count_query = count_query.where(column.is_(None))
+                    elif isinstance(value, tuple) and len(value) == 2 and value[0] == "gt":
+                        # Gérer le filtre 'greater than' (utilisé pour unpaid)
+                        query = query.where(column > value[1])
+                        count_query = count_query.where(column > value[1])
+                    else:
+                        query = query.where(column == value)
+                        count_query = count_query.where(column == value)
+                else:
+                    print(
+                        f"Avertissement: Attribut de filtre inconnu '{key}' pour le modèle {self.model.__name__}"
+                    )
+
+        total = db.scalar(count_query)
+
+        items = list(db.scalars(query.order_by(self.model.id).offset(skip).limit(page_size)))
 
         return items, total
 

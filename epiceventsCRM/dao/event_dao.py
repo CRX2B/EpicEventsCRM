@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from epiceventsCRM.dao.base_dao import BaseDAO
-from epiceventsCRM.models.models import Client, Contract, Event
+from epiceventsCRM.models.models import Contract, Event
 
 
 class EventDAO(BaseDAO[Event]):
@@ -70,7 +70,6 @@ class EventDAO(BaseDAO[Event]):
         Returns:
             List[Event]: Liste des événements liés au commercial
         """
-        # Cette méthode nécessite une jointure avec les tables Contract et Client
         stmt = (
             select(self.model)
             .join(self.model.contract)
@@ -130,7 +129,6 @@ class EventDAO(BaseDAO[Event]):
             print("Aucun contract_id fourni dans les données de l'événement")
             return None
 
-        # Récupérer le contrat
         contract = db.query(Contract).filter(Contract.id == contract_id).first()
         if not contract:
             print(f"Contrat avec ID {contract_id} non trouvé dans la base de données")
@@ -142,7 +140,6 @@ class EventDAO(BaseDAO[Event]):
             print(f"Client non trouvé pour le contrat {contract_id}")
             return None
 
-        # Créer l'événement avec les informations du client
         event = Event(
             name=event_data["name"],
             contract_id=contract_id,

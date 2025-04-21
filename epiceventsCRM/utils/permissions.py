@@ -2,8 +2,6 @@ from enum import Enum
 from functools import wraps
 from typing import Callable, Set
 
-from epiceventsCRM.utils.sentry_utils import capture_message
-
 
 class Department(str, Enum):
     """Énumération des départements."""

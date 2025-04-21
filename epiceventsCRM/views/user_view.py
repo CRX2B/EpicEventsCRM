@@ -2,12 +2,10 @@ from typing import Any, List
 
 import click
 from rich.panel import Panel
-from rich.prompt import Confirm
 from rich.table import Table
 
 from epiceventsCRM.controllers.user_controller import UserController
 from epiceventsCRM.models.models import User
-from epiceventsCRM.utils.auth import verify_token
 from epiceventsCRM.utils.permissions import PermissionError
 from epiceventsCRM.views.base_view import BaseView, console
 
@@ -41,12 +39,10 @@ class UserView(BaseView):
 
         user_view = UserView()
 
-        # Utilisation des commandes génériques de BaseView
         user.add_command(user_view.create_list_command())
         user.add_command(user_view.create_get_command())
         user.add_command(user_view.create_delete_command())
 
-        # Commande de création d'utilisateur (spécifique)
         @user.command("create")
         @click.option("--email", "-e", required=True, help="Email de l'utilisateur")
         @click.option("--password", "-p", required=True, help="Mot de passe de l'utilisateur")
@@ -100,9 +96,7 @@ class UserView(BaseView):
                         border_style="red",
                     )
                 )
-            except (
-                ValueError
-            ) as e:  # Capturer les erreurs potentielles (ex: département ID invalide)
+            except ValueError as e:
                 console.print(
                     Panel.fit(
                         f"[bold red]Erreur de données:[/bold red]\\n{str(e)}",
@@ -119,7 +113,6 @@ class UserView(BaseView):
                     )
                 )
 
-        # Commande de mise à jour d'utilisateur (spécifique)
         @user.command("update")
         @click.argument("id", type=int)
         @click.option("--email", "-e", help="Email de l'utilisateur")
@@ -185,9 +178,7 @@ class UserView(BaseView):
                         border_style="red",
                     )
                 )
-            except (
-                ValueError
-            ) as e:  # Capturer les erreurs potentielles (ex: département ID invalide lors de l'update)
+            except ValueError as e:
                 console.print(
                     Panel.fit(
                         f"[bold red]Erreur de données:[/bold red]\\n{str(e)}",
@@ -225,7 +216,7 @@ class UserView(BaseView):
                 if user:
                     console.print(
                         Panel.fit(
-                            f"[bold green]Utilisateur trouvé.[/bold green]", border_style="green"
+                            "[bold green]Utilisateur trouvé.[/bold green]", border_style="green"
                         )
                     )
                     user_view.display_item(user)
@@ -268,13 +259,11 @@ class UserView(BaseView):
             border_style="blue",
         )
 
-        # Ajout des colonnes
         table.add_column("ID", style="cyan", justify="right")
         table.add_column("Nom complet", style="green")
         table.add_column("Email", style="yellow")
         table.add_column("Département", style="blue")
 
-        # Ajout des lignes
         for user in users:
             department_name = user.department.departement_name if user.department else "Non défini"
             table.add_row(
